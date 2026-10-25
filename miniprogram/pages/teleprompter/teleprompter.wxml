@@ -1,0 +1,235 @@
+<view class="tp-page" style="background: {{bg}};">
+
+  <!-- 提词内容区（点按切换控制栏，上下拖动可手动翻页） -->
+  <view
+    class="tp-viewport"
+    bindtap="onTapScreen"
+    bindtouchstart="onTouchStart"
+    bindtouchmove="onTouchMove"
+    bindtouchend="onTouchEnd"
+  >
+    <view
+      class="tp-content"
+      style="transform: translate3d(0, {{visibleStart * lineHeightPx - offset}}px, 0) scaleX({{mirror ? -1 : 1}}); will-change: transform; padding-left: {{marginHorizontal}}px; padding-right: {{marginHorizontal}}px; font-family: {{fontFamily}};"
+    >
+      <view
+        wx:for="{{visibleLines}}"
+        wx:for-item="line"
+        wx:key="_i"
+        class="tp-line"
+        style="height: {{lineHeightPx}}px; line-height: {{lineHeightPx}}px;"
+      >
+        <text
+          wx:if="{{line.rolePrefix}}"
+          class="tp-role"
+          style="color: {{line.prefixColor}}; font-size: {{fontSizePx}}px; letter-spacing: {{letterSpacing}}px;"
+        >{{line.rolePrefix}}</text><text
+          class="tp-body"
+          style="color: {{line.bodyColor}}; font-size: {{fontSizePx}}px; letter-spacing: {{letterSpacing}}px;"
+        >{{line.body}}</text>
+      </view>
+    </view>
+
+    <!-- 视线参考线：视线对准这里，观众看不出在读稿 -->
+    <view wx:if="{{showGuide}}" class="tp-guide"></view>
+
+    <!-- 电影字幕式上下渐隐遮罩：匀速滚动的字幕在入屏/出屏处柔和淡入淡出，更有「片尾字幕」质感 -->
+    <view class="tp-fade tp-fade--top" style="background: linear-gradient(to bottom, {{bg}} 0%, rgba(0,0,0,0) 100%);"></view>
+    <view class="tp-fade tp-fade--bottom" style="background: linear-gradient(to top, {{bg}} 0%, rgba(0,0,0,0) 100%);"></view>
+  </view>
+
+  <!-- 开场倒计时 -->
+  <view wx:if="{{countdown > 0}}" class="tp-countdown" style="padding-top: {{statusBarHeight}}px">
+    <view class="tp-countdown-num">{{countdown}}</view>
+  </view>
+
+  <!-- 进度条（可拖动定位）：横屏下缩小尺寸并约 50% 透明（需求 3）
+       纯净显示模式：屏幕只留「台词文本 + 底部进度条」，横屏与竖屏一致都常驻显示。
+       拖动定位逻辑不变，仅去掉原先「横屏隐藏」的条件。 -->
+  <view class="tp-progress-wrap {{orientation === 'landscape' ? 'tp-land' : ''}}">
+    <slider
+      class="tp-slider"
+      min="0"
+      max="100"
+      value="{{progressValue}}"
+      block-size="{{orientation === 'landscape' ? 14 : 20}}"
+      block-color="#FFD166"
+      activeColor="#FFD166"
+      backgroundColor="rgba(255,255,255,0.2)"
+      bindchanging="onSeekChanging"
+      bindchange="onSeekChange"
+    />
+  </view>
+
+  <!-- 声控状态：属浮层控件，纯净模式下跟随控件一起显隐（横竖屏一致） -->
+  <view wx:if="{{voiceEnabled && showControls}}" class="tp-voice" bindtap="onTapRecalibrate">
+    <view class="tp-voice-label">{{voiceCalibrating ? '校准中' : '声控'}}</view>
+    <view class="tp-voice-track">
+      <view class="tp-voice-fill" style="width: {{voiceLevel}}%"></view>
+    </view>
+    <view wx:if="{{voiceTip}}" class="tp-voice-tip">{{voiceTip}}</view>
+  </view>
+
+  <!-- 顶部栏（padding-top 用 navSafeTop，避开右上角胶囊「退出」按钮，竖屏不再重叠）
+       Req 2：滚动中（playing）返回/设置按键压到 10% 透明度避免干扰视线；暂停后恢复全亮
+       纯净显示模式：顶栏只在控件被唤出（showControls）时出现，横屏与竖屏完全一致。
+       退出/设置的常驻出口改由菜单底部那一行提供（见下方「设置 / 退出」）。 -->
+  <view wx:if="{{showControls}}" class="tp-topbar {{orientation === 'landscape' ? 'tp-land' : ''}}" style="padding-top: {{navSafeTop}}px">
+    <view class="tp-icon {{playing ? 'tp-dim' : ''}}" bindtap="onTapBack">返回</view>
+    <view class="tp-title">{{title}}</view>
+    <view wx:if="{{scriptPosText}}" class="tp-pos">{{scriptPosText}}</view>
+    <view class="tp-icon {{playing ? 'tp-dim' : ''}}" bindtap="onTapSettings">设置</view>
+  </view>
+
+  <!-- 常驻浮动「设置」入口已移除：纯净显示模式要求屏幕上不出现任何与台词无关的元素。
+       设置入口统一走菜单底部那一行（横竖屏一致），不再有常驻浮钮。 -->
+
+  <!-- 菜单遮罩：半透明区域，点击即关闭控制菜单（需求 4）。位于台词区之上、菜单面板之下 -->
+  <!-- 不再用 wx:if 插拔，改为 visibility 切换：避免元素「先插入再定位」触发的中央闪现 -->
+  <view class="tp-controls-mask {{showControls ? '' : 'tp-hidden'}}" catchtap="onCloseControls"></view>
+
+  <!-- 底部控制条（播放时 6 秒无操作自动收起；横屏超高时内部可上下滑动看全所有功能） -->
+  <!-- 常驻 DOM + visibility 切换：菜单首帧即落在最终高度，不经过「先中央一闪、再落底部」的中间态 -->
+  <view
+    class="tp-controls {{orientation === 'landscape' ? 'tp-controls--landscape' : ''}} {{showControls ? '' : 'tp-hidden'}}"
+    catchtap="noop"
+  >
+    <scroll-view
+      scroll-y
+      class="tp-menu-scroll"
+      style="height: {{menuHeight}}px;"
+      enhanced
+      show-scrollbar="{{false}}"
+      catchtap="noop"
+    >
+    <view class="tp-menu-inner">
+    <view class="tp-row">
+      <view class="tp-btn" bindtap="onTapRestart">重来</view>
+      <view class="tp-btn primary" bindtap="onTapPlay">{{playing ? '暂停' : '播放'}}</view>
+      <view class="tp-stepper">
+        <view class="tp-step" data-delta="-20" bindtap="onTapSpeed">慢</view>
+        <view class="tp-step-val">{{speed}}</view>
+        <view class="tp-step" data-delta="20" bindtap="onTapSpeed">快</view>
+      </view>
+      <view class="tp-btn {{loop ? 'on' : ''}}" bindtap="onToggleLoop">循环</view>
+    </view>
+
+    <!-- 速度滑块（需求 5：提词台直接调速度） -->
+    <view class="tp-row tp-speed-row">
+      <text class="tp-mini">速度</text>
+      <slider
+        class="tp-speed-slider"
+        min="{{speedMin}}"
+        max="{{speedMax}}"
+        value="{{speed}}"
+        block-size="20"
+        block-color="#FFD166"
+        activeColor="#FFD166"
+        backgroundColor="rgba(255,255,255,0.2)"
+        bindchanging="onSlideSpeed"
+        bindchange="onSlideSpeed"
+      />
+      <text class="tp-mini tp-mini-val">{{speed}}</text>
+    </view>
+
+    <!-- 两种滚动方式：连续匀速上滚(默认) / 声控跟读 -->
+    <view class="tp-row tp-style-row">
+      <text class="tp-mini">滚动</text>
+      <view
+        wx:for="{{scrollStyleOptions}}"
+        wx:for-item="s"
+        wx:key="key"
+        class="tp-btn tp-seg {{scrollStyle === s.key ? 'on' : ''}}"
+        data-key="{{s.key}}"
+        bindtap="onSetScrollStyle"
+      >{{s.label}}</view>
+    </view>
+
+    <!-- 横竖屏 + 角色高亮模式（需求 5 / 7：竖屏只显示「切换横屏」，横屏只显示「切换竖屏」） -->
+    <view class="tp-row">
+      <view class="tp-btn" bindtap="onToggleOrientation">{{orientation === 'landscape' ? '切竖屏' : '切横屏'}}</view>
+      <view class="tp-btn {{roleHighlightMode === 'name' ? 'on' : ''}}" bindtap="onSetRoleMode" data-mode="name">名字高亮</view>
+      <view class="tp-btn {{roleHighlightMode === 'full' ? 'on' : ''}}" bindtap="onSetRoleMode" data-mode="full">名字+台词</view>
+    </view>
+
+    <!-- 字体大小调整（需求 3：菜单内 A-/A+） -->
+    <view class="tp-row tp-font-row">
+      <text class="tp-mini">字号</text>
+      <view class="tp-stepper">
+        <view class="tp-step" data-delta="-1" bindtap="onTapFontSize">A-</view>
+        <view class="tp-step-val">{{fontSizePx}}px</view>
+        <view class="tp-step" data-delta="1" bindtap="onTapFontSize">A+</view>
+      </view>
+    </view>
+
+    <!-- 上/下一个台本（需求 10：原「上/下一段」改为切换台本）
+         到头时 hasPrevScript/hasNextScript 为 false，按钮置灰且不可点，避免「亮着却点了没反应」 -->
+    <view class="tp-row">
+      <view class="tp-btn {{hasPrevScript ? '' : 'is-disabled'}}" bindtap="onTapPrevScript">← 上一个台本</view>
+      <view class="tp-btn {{hasNextScript ? '' : 'is-disabled'}}" bindtap="onTapNextScript">下一个台本 →</view>
+      <view class="tp-step-val">{{progressText}}</view>
+    </view>
+
+    <!-- 三个文字/背景预设（需求 11）：一键套用配色 -->
+    <view class="tp-row tp-theme-row">
+      <view
+        wx:for="{{themePresets}}"
+        wx:for-item="t"
+        wx:key="key"
+        class="tp-theme-chip"
+        style="background:{{t.bg}};color:{{t.text}};border-color:{{t.text}};"
+        data-key="{{t.key}}"
+        bindtap="onTapThemePreset"
+      >{{t.name}}</view>
+    </view>
+
+    <view class="tp-row">
+      <view class="tp-btn {{mirror ? 'on' : ''}}" bindtap="onToggleMirror">镜像</view>
+      <view class="tp-btn {{showGuide ? 'on' : ''}}" bindtap="onToggleGuide">参考线</view>
+      <view class="tp-btn {{fillLight ? 'on' : ''}}" bindtap="onToggleFillLight">补光</view>
+      <view class="tp-btn {{voiceEnabled ? 'on' : ''}}" bindtap="onToggleVoice">声控跟读</view>
+    </view>
+
+    <view wx:if="{{finished}}" class="tp-finished">已读完，点「重来」重新开始</view>
+
+    <!-- 纯净显示模式的「出口」：顶栏与常驻浮钮都已隐藏，
+         设置与退出只能从这里进（横屏与竖屏一致，不再区分）。
+         到达方式 = 双击屏幕呼出菜单，无操作 6 秒自动收起。 -->
+    <view class="tp-row">
+      <view class="tp-btn" bindtap="onTapSettings">设置</view>
+      <view class="tp-btn" bindtap="onTapBack">退出</view>
+    </view>
+
+    <view class="tp-hint">单击暂停/继续 · 双击屏幕 = 呼出/收起菜单 · 点暗处关闭 · 无操作自动隐藏</view>
+    </view>
+    </scroll-view>
+  </view>
+
+  <!-- 复盘弹窗已移除（需求 3）：台词读完后不再弹复盘、也无历史复盘页 -->
+
+  <!-- 首次使用引导（只看一次）
+       结构：标题区固定 / 步骤区可滚 / 主按钮吸底 —— 横屏视口矮也不会裁掉按钮 -->
+  <view wx:if="{{guideVisible}}" class="tp-guide-mask" bindtap="onCloseGuide">
+    <view class="tp-guide-card">
+      <view class="tp-guide-head">
+        <view class="tp-guide-title">欢迎使用宝哥提词器</view>
+        <view class="tp-guide-sub">先点「播放」，其余随时可调</view>
+      </view>
+      <view class="tp-guide-body">
+        <view class="tp-guide-item">
+          <text class="tp-guide-ico">▶</text>
+          <view class="tp-guide-txt"><text class="tp-guide-b">点「播放」就开始</text><text class="tp-guide-d">台词匀速上移，视线跟着参考线走</text></view>
+        </view>
+        <view class="tp-guide-item">
+          <text class="tp-guide-ico">⏩</text>
+          <view class="tp-guide-txt"><text class="tp-guide-b">拖进度条跳位 / 上下滑翻页</text><text class="tp-guide-d">想跳到哪就拖到哪，也能手动翻</text></view>
+        </view>
+        <view class="tp-guide-item">
+          <text class="tp-guide-ico">⚙</text>
+          <view class="tp-guide-txt"><text class="tp-guide-b">双击屏幕呼出菜单</text><text class="tp-guide-d">设置 / 退出都在这；控件会自动隐藏</text></view>
+        </view>
+      </view>
+      <view class="tp-guide-btn" bindtap="onCloseGuide">开始提词</view>
+    </view>
+  </view>
+</view>

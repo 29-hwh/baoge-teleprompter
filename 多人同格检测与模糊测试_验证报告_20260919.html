@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多人同格 · 检测与模糊测试验证报告</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#fff; --ink:#1a1d23; --ink2:#545c6b; --line:#e3e6ec;
+    --ok:#16a34a; --okbg:#eef9f1; --bad:#dc2626; --badbg:#fef2f2;
+    --accent:#1f4e79; --accent-bg:#eef4fa; --warn:#b45309; --warnbg:#fffbeb;
+    --mono:"SF Mono",Menlo,Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:40px 24px 80px}
+  header{margin-bottom:32px}
+  h1{margin:0 0 8px;font-size:27px;letter-spacing:-.3px}
+  .sub{color:var(--ink2);font-size:14px}
+  .sub b{color:var(--ink);font-weight:600}
+  h2{margin:44px 0 14px;font-size:19px;padding-left:12px;border-left:4px solid var(--accent)}
+  h3{margin:26px 0 10px;font-size:16px;color:var(--accent)}
+  p{margin:10px 0}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:26px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .card .lab{font-size:12.5px;color:var(--ink2);letter-spacing:.4px}
+  .card .num{font-size:26px;font-weight:700;margin:6px 0 2px;letter-spacing:-.5px}
+  .card .num.sm{font-size:21px}
+  .card .note{font-size:12.5px;color:var(--ink2)}
+  .g{color:var(--ok)} .r{color:var(--bad)}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin:16px 0}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px;background:var(--card)}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:#f0f2f6;font-weight:600;font-size:13.5px}
+  td.c,th.c{text-align:center}
+  code{font-family:var(--mono);font-size:12.8px;background:#f1f3f7;border:1px solid var(--line);
+    border-radius:4px;padding:1px 5px;word-break:break-all}
+  pre{font-family:var(--mono);font-size:12.8px;background:#f8f9fb;border:1px solid var(--line);
+    border-radius:8px;padding:13px 15px;overflow:auto;margin:10px 0;line-height:1.65}
+  pre .c1{color:var(--ink2)}
+  .tag{display:inline-block;font-size:12px;padding:2px 9px;border-radius:20px;font-weight:600;letter-spacing:.3px}
+  .tag.ok{background:var(--okbg);color:var(--ok)}
+  .tag.bad{background:var(--badbg);color:var(--bad)}
+  .tag.warn{background:var(--warnbg);color:var(--warn)}
+  .tag.info{background:var(--accent-bg);color:var(--accent)}
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+  .ba>div{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--card)}
+  .ba .h{font-size:13px;font-weight:600;margin-bottom:8px;letter-spacing:.3px}
+  .ba .before .h{color:var(--bad)} .ba .after .h{color:var(--ok)}
+  .flow{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin:16px 0}
+  .steps{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px}
+  .step{flex:1 1 200px;background:#f8f9fb;border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+  .step .n{font-size:12px;color:var(--accent);font-weight:700;letter-spacing:.5px}
+  .step .t{font-weight:600;margin:3px 0 5px;font-size:14px}
+  .step .d{font-size:12.8px;color:var(--ink2);line-height:1.6}
+  .note-box{background:var(--warnbg);border:1px solid #fde68a;border-left:4px solid var(--warn);
+    border-radius:8px;padding:14px 17px;margin:16px 0;font-size:14px}
+  .ok-box{background:var(--okbg);border:1px solid #bbf7d0;border-left:4px solid var(--ok);
+    border-radius:8px;padding:14px 17px;margin:16px 0;font-size:14px}
+  .info-box{background:var(--accent-bg);border:1px solid #cfe0f0;border-left:4px solid var(--accent);
+    border-radius:8px;padding:14px 17px;margin:16px 0;font-size:14px}
+  ul{margin:10px 0;padding-left:22px} li{margin:6px 0}
+  .files{font-family:var(--mono);font-size:12.6px}
+  footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:var(--ink2);font-size:13px}
+  @media(max-width:720px){.ba{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>表格剧本「多人同格」专项检测与随机模糊测试</h1>
+  <div class="sub">
+    对象：<b>宝哥的提词器</b>（微信小程序）· 解析链路 <code>extractDocxBlocks → splitScripts → parseScript</code><br>
+    样本：<b>建华&amp;小凤的生活81-90.docx</b>（MD5 <code>a390285d0de36da2da5fae94f1f8f7a2</code>，未改动）· 日期：2026-09-19
+  </div>
+</header>
+
+<div class="cards">
+  <div class="card">
+    <div class="lab">真实稿件多人同格</div>
+    <div class="num g">49 / 49</div>
+    <div class="note">332 条断言 0 失败</div>
+  </div>
+  <div class="card">
+    <div class="lab">边界写法</div>
+    <div class="num g">25 / 25</div>
+    <div class="note">本文档没出现、但现实中会有</div>
+  </div>
+  <div class="card">
+    <div class="lab">随机文档多轮测试</div>
+    <div class="num g">3200 篇</div>
+    <div class="note">381,679 条断言 · 0 类失败</div>
+  </div>
+  <div class="card">
+    <div class="lab">全量回归</div>
+    <div class="num g">34 套件</div>
+    <div class="note">0 失败（含新增 round30）</div>
+  </div>
+</div>
+
+<div class="ok-box">
+  <b>一句话结论：</b>真实稿件 49 个多人同格全部处理正确；查出的唯一真缺陷在「本文档没出现的写法」上
+  （两人齐声的 <code>A、B：…</code> 被切碎），已修复并由 3200 篇随机文档 + 35 条回归用例锁定。
+</div>
+
+<h2>一、检测：真实文档的多人同格普查</h2>
+
+<p>新增只读诊断脚本 <code>diag_multi.js</code>，专门盯「同一个台词格里两个或多个人物先后说话」这一场景。
+它不是另写一套解析，而是<b>直接调用产品自身的函数</b>，逐格核对四项：</p>
+
+<table>
+  <tr><th style="width:130px">检查项</th><th>含义</th><th class="c" style="width:110px">结果</th></tr>
+  <tr><td>M1 行数守恒</td><td>解析出的行数 ≥ 文档自身的行结构（不许丢行）</td><td class="c"><span class="tag ok">失败 0 格</span></td></tr>
+  <tr><td>M2 零丢字</td><td>各段拼接压平 == 原文压平（既不吞字也不改写）</td><td class="c"><span class="tag ok">失败 0 格</span></td></tr>
+  <tr><td>M3 无粘连</td><td>任何一段里不得再出现第二个真说话人 + 冒号</td><td class="c"><span class="tag ok">失败 0 段</span></td></tr>
+  <tr><td>M4 归属正确</td><td>每段要么能识别出角色，要么是舞台说明（整段被括号包住）</td><td class="c"><span class="tag ok">失败 0 段</span></td></tr>
+</table>
+
+<table>
+  <tr><th>文档规模</th><th class="c">10 张表</th><th class="c">736 格</th><th class="c">74 个 &lt;w:br/&gt;</th><th class="c">台词列 174 格</th><th class="c">多人同格 49 格</th></tr>
+  <tr><td>说话人数分布</td><td class="c" colspan="5">2 人 ×35 &nbsp;·&nbsp; 3 人 ×9 &nbsp;·&nbsp; 4 人 ×5</td></tr>
+</table>
+
+<p><b>结论：</b>真实稿件里的多人同格<b>全部靠 <code>&lt;w:br/&gt;</code> 软换行分隔</b>，处理完全正确 —— 49 格全过。
+这也解释了为什么此前几轮的缺陷都藏在别处：稿件本身排版很干净，问题只会在<b>别的写法</b>上冒出来。</p>
+
+<h2>二、查出的真缺陷：联合说话人被切碎</h2>
+
+<p>既然真实稿件里没有，就把「现实中必然出现」的写法逐条列出来测（末节 25 条）。查出一条：</p>
+
+<div class="ba">
+  <div class="before">
+    <div class="h">✕ 修复前</div>
+    <pre>输入：王建华、杨凤：我们一起回来了。
+
+输出：<span style="color:#dc2626">「王建华、」</span>
+     「杨凤：我们一起回来了。」</pre>
+    <div style="font-size:13px;color:var(--ink2)">
+      一行两人齐声的台词被当成「杨凤单独说话」，前一行只剩半句残词。
+    </div>
+  </div>
+  <div class="after">
+    <div class="h">✓ 修复后</div>
+    <pre>输入：王建华、杨凤：我们一起回来了。
+
+输出：「王建华、杨凤：我们一起回来了。」</pre>
+    <div style="font-size:13px;color:var(--ink2)">
+      整组保留为一行，不切、不丢字、不留残词。
+    </div>
+  </div>
+</div>
+
+<p><b>根因：</b>说话人左边界规则只要求「前一字符<b>非中文</b>」—— 用来防住「…也当晚处理掉：」这类正文被误切。
+但顿号 <code>、</code> 与连接词 <code>和 / 与 / 及 / 跟 / 同</code> 恰好也满足「非中文」，
+于是并列结构被误当成了切点。</p>
+
+<h2>三、修复：三轮迭代才收敛</h2>
+
+<div class="flow">
+  <div class="steps">
+    <div class="step">
+      <div class="n">第 1 轮</div>
+      <div class="t">一律不切</div>
+      <div class="d">残句没了。但<b>漏切</b>：<code>…追剧还儿子、王建华：明天还得早起。</code>（真粘连 + 联合）两行粘成一行 —— 被模糊测试 IM1 抓到。</div>
+    </div>
+    <div class="step">
+      <div class="n">第 2 轮</div>
+      <div class="t">切点左移</div>
+      <div class="d">把切点从「B：」左移到整组最前面。段首组移到 0 仍是一行；真粘连组移到「儿」前正好断开。<b>但三人联合只移了一级。</b></div>
+    </div>
+    <div class="step">
+      <div class="n">第 3 轮</div>
+      <div class="t">循环左移</div>
+      <div class="d"><code>王建华、杨凤、婆婆：</code> 连移两级到位（上限 8 级防死循环）。规则收敛。</div>
+    </div>
+  </div>
+</div>
+
+<p>最终规则是<b>三态</b>，不是「切 / 不切」两态 —— 这是三轮迭代真正的收获：</p>
+
+<table>
+  <tr><th style="width:210px">切点左侧的情形</th><th style="width:210px">语义</th><th>处置</th><th style="width:260px">例子</th></tr>
+  <tr>
+    <td>不是并列连接</td><td>普通切点</td><td>照旧切</td>
+    <td><code>杨凤：好。王建华：嗯。</code> → 2 行</td>
+  </tr>
+  <tr>
+    <td>是并列连接，且连接词左侧<b>是</b>白名单名字</td>
+    <td>联合说话人组</td>
+    <td><b>切点左移到组的最前面</b></td>
+    <td><code>王建华、杨凤：…</code> → 1 行<br><code>杨凤：追剧还儿子、王建华：…</code> → 2 行</td>
+  </tr>
+  <tr>
+    <td>是并列连接，且连接词左侧<b>不是</b>名字</td>
+    <td>正文里的并列标点</td>
+    <td><b>切点作废</b>（整格不切）</td>
+    <td><code>杨凤：他买了菜、王建华：我不去。</code> → 1 行</td>
+  </tr>
+</table>
+
+<div class="info-box">
+  <b>第三态是关键。</b>「他买了菜<b>、</b>王建华：」里的顿号属于正文（左侧是「了菜」，不是名字），
+  这时切了才会留下「…了菜、」残句 —— 所以判定作废、保持一句完整。
+  判据只认「连接词左侧是不是本稿确实当过说话人的名字」，不做更复杂的句法推断。
+</div>
+
+<h2>四、随机模糊测试：3200 篇结构类似的对话数据</h2>
+
+<p>按宝哥要求「随机生成结构类似的对话数据，开展多轮测试」。新增 <code>fuzz_multi.js</code>，
+生成<b>高保真 OOXML 表格稿</b>（真 <code>tblPr/tcPr/rPr</code>、随机 run 切分、<code>&lt;w:br/&gt;</code> 自闭合与
+<code>textWrapping</code>、段落边界、XML 实体），走完整链路 <code>extractDocxBlocks → splitScripts → parseScript</code>。</p>
+
+<h3>造数据的方式</h3>
+<table>
+  <tr><th style="width:190px">维度</th><th>内容</th></tr>
+  <tr><td>8 种分隔策略<br>（随机混用）</td>
+      <td><code>br1</code> 单个软换行 · <code>br2</code> 两个（空行） · <code>brAlt</code> textWrapping ·
+          <code>para</code> 段落边界 · <code>punct</code> 句末标点 · <code>space</code> 空格 ·
+          <code>glueWl</code> 真粘连 · <code>glueFk</code> 假说话人（正文动词短语，必须不切）</td></tr>
+  <tr><td>另加行形式</td>
+      <td><code>joint</code> 联合说话人（与分隔策略正交，任何分隔都可能配它）</td></tr>
+  <tr><td>说话人写法</td>
+      <td>名字+冒号 · 名字+括号动作 · 括号在冒号之后 · <code>（名字）：</code> · 空格+冒号 · 单字名 · 间隔号名字（阿·依）· 英文名</td></tr>
+  <tr><td>标准答案</td>
+      <td>每行都记录「谁说的、应是第几行」，逐行回验（不靠产品自己判自己）</td></tr>
+</table>
+
+<h3>7 条不变量</h3>
+<table>
+  <tr>
+    <th class="c">IM1</th><th class="c">IM2</th><th class="c">IM3</th><th class="c">IM4</th><th class="c">IM5</th><th class="c">IM6</th><th class="c">IM7</th>
+  </tr>
+  <tr>
+    <td class="c">行数守恒</td><td class="c">零丢字</td><td class="c">无粘连</td><td class="c">归属正确</td>
+    <td class="c">角色名卫生</td><td class="c">分隔方式等价</td><td class="c">白名单覆盖</td>
+  </tr>
+</table>
+
+<h3>结果矩阵（多轮 · 不同规模与种子）</h3>
+<table>
+  <tr><th>文档数 × 每集行数</th><th class="c" style="width:110px">起始种子</th><th class="c" style="width:130px">断言次数</th><th class="c" style="width:150px">结果</th></tr>
+  <tr><td>1000 × 6</td><td class="c">20260919</td><td class="c">118,129</td><td class="c"><span class="tag ok">0 类失败</span></td></tr>
+  <tr><td>500 × 4</td><td class="c">1001</td><td class="c">59,738</td><td class="c"><span class="tag ok">0 类失败</span></td></tr>
+  <tr><td>500 × 8</td><td class="c">2002</td><td class="c">59,738</td><td class="c"><span class="tag ok">0 类失败</span></td></tr>
+  <tr><td>500 × 12</td><td class="c">3003</td><td class="c">59,738</td><td class="c"><span class="tag ok">0 类失败</span></td></tr>
+  <tr><td>500 × 10</td><td class="c">5005</td><td class="c">59,738</td><td class="c"><span class="tag ok">0 类失败</span></td></tr>
+  <tr><td>200 × 20</td><td class="c">6006</td><td class="c">24,598</td><td class="c"><span class="tag ok">0 类失败</span></td></tr>
+  <tr style="background:#f0f2f6;font-weight:600">
+    <td>合计 3200 篇</td><td class="c">6 组</td><td class="c">381,679</td><td class="c"><span class="tag ok">全部通过</span></td></tr>
+</table>
+
+<div class="ok-box">
+  <b>这套测试台的价值已经被证明。</b>第 1 轮的「一律不切」在真实文档 49 格上全部通过 ——
+  是<b>模糊测试在复合场景里抓出了漏切</b>（真粘连 + 联合说话人）。
+  人手工想边界用例，想不到这种组合。
+</div>
+
+<h2>五、回归锁定</h2>
+
+<p>新增 <code>round30.test.js</code>（<b>35 / 35 通过</b>），把新边界固化成确定性用例，防止以后改坏：</p>
+
+<table>
+  <tr><th style="width:80px">分组</th><th>覆盖内容</th><th class="c" style="width:70px">条数</th></tr>
+  <tr><td>30-A</td><td>联合说话人整组不切开（顿号 / 和 / 还有 / 以及 / 跟 / 带动作 / 括注 / 三人）</td><td class="c">10</td></tr>
+  <tr><td>30-B</td><td>切点左移（真粘连 + 联合组，含括注、含不许把名字切一半）</td><td class="c">6</td></tr>
+  <tr><td>30-C</td><td>连接词左侧不是名字 → 切点作废</td><td class="c">4</td></tr>
+  <tr><td>30-D</td><td>与引号引用、嵌套引号、普通多人、正文顿号互不干扰</td><td class="c">7</td></tr>
+  <tr><td>30-E</td><td>白名单「优先」不等于「越权」</td><td class="c">3</td></tr>
+  <tr><td>30-F</td><td>docx 表格稿端到端（行数 + 零丢字）</td><td class="c">5</td></tr>
+</table>
+
+<p>全量回归 <b>34 个套件 0 失败</b>（<code>bug_audit.test.js</code> 是审计型脚本、<code>role_highlight_select.test.js</code> 已废弃跳过）。</p>
+
+<h2>六、改动清单与遗留</h2>
+
+<h3>改了什么（只改小程序，文档一字未动）</h3>
+<table>
+  <tr><th style="width:300px">文件</th><th>改动</th></tr>
+  <tr><td class="files">miniprogram/utils/util.js</td>
+      <td>新增 <code>jointConnectorStartAt</code> / <code>jointSpeakerBefore</code> / <code>resolveJointCut</code>；
+          说话人切点判定接入「联合说话人三态处置」（形式①「名字：」与形式②「（名字）：」两条分支都接）</td></tr>
+  <tr><td class="files">diag_multi.js <span class="tag info">新增</span></td>
+      <td>多人同格专项诊断（M1–M4 逐格四检 + 25 条边界写法），只读、判定与产品同源</td></tr>
+  <tr><td class="files">fuzz_multi.js <span class="tag info">新增</span></td>
+      <td>多人同格随机文档模糊测试台（高保真 OOXML + 8 种分隔 × 联合行形式 + IM1–IM7）</td></tr>
+  <tr><td class="files">round30.test.js <span class="tag info">新增</span></td>
+      <td>35 条确定性回归，锁定本轮全部行为</td></tr>
+</table>
+
+<h3>已知差异（本轮刻意不动）</h3>
+<div class="note-box">
+  <b>中文连接词在角色识别层会被整体当成一个角色名。</b>
+  <code>张阿姨和儿媳妇：…</code> 会被识别成角色「张阿姨和儿媳妇」（因为全是汉字），
+  而顿号形式的 <code>王建华、杨凤：…</code> 因含标点被判非法、回退取第一个名字。
+  这是 <span class="files">engine/role.js</span> 的既有行为，属于<b>角色识别层</b>，与拆分器无关；
+  真实三部剧本实测 <b>0 处</b>这类写法，故本轮不处理 —— 已在 <span class="files">CONTEXT.md</span> 第二十八节记录。
+</div>
+
+<h3>三个坑（写给未来的自己）</h3>
+<ul>
+  <li><b>联合行的名字进不了白名单。</b><code>collectSpeakerNames</code> 只认「行首 ≤5 字 + 冒号」，
+      而「王建华、杨凤：」不以「王建华：」起头 → 联合行自己贡献不了白名单。测试台里必须从
+      「已在物理行首露过面」的名字池里挑成员，否则「已进白名单也不许切开」这条守门断言形同虚设。</li>
+  <li><b>诊断脚本的判定必须与产品同源。</b>初版自己写了一套简化规则，把产品<b>故意不切</b>的两处
+      （引号内引用、联合说话人）误报成「粘连」。现已直接调用产品函数。</li>
+  <li><b>先定位根因再动手。</b>上一轮的教训（改文档反而改坏数据）在这一轮同样适用：
+      本轮全程只改小程序，文档 MD5 始终未变。</li>
+</ul>
+
+<footer>
+  报告生成于 2026-09-19 · 全部结论可用 <code>node diag_multi.js /tmp/jsxf_doc.xml</code>、
+  <code>node fuzz_multi.js 1000 6 20260919</code>、<code>node round30.test.js</code> 复现。
+</footer>
+
+</div>
+</body>
+</html>

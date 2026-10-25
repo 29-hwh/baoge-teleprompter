@@ -1,0 +1,42 @@
+<view class="prev">
+  <!-- 顶部固定操作栏：始终可见，不随滚动消失 -->
+  <view class="topbar">
+    <view class="topbar-head">
+      <button class="cancel-btn" bindtap="onCancel">取消</button>
+      <view class="topbar-meta">{{name}} · 共 {{charCount}} 字</view>
+    </view>
+    <view class="bar">
+      <button class="btn" bindtap="onImportSingle">作为一篇导入</button>
+      <button class="btn" disabled="{{plainCount < 2}}" loading="{{loading}}" bindtap="onImportPlain">智能拆分（纯文字档）{{plainCount > 1 ? '（' + plainCount + ' 篇）' : ''}}</button>
+      <button class="btn primary" disabled="{{multiCount < 2}}" loading="{{loading}}" bindtap="onImportMultimodal">智能多模态拆分（表格）{{multiCount > 1 ? '（' + multiCount + ' 集）' : ''}}</button>
+    </view>
+
+    <!-- 第四种拆分方式：悟空脚本专属拆分。
+         针对「镜头 / 画面动作 / 台词 / 备注」四列脚本表，只把「台词」栏原样复制出来，
+         不做清洗（占位行与空行保留），是最贴近人工整理「拆分步骤1」的导入方式。 -->
+    <view class="bar bar-sub">
+      <button
+        class="btn wukong"
+        disabled="{{wukongCount < 2}}"
+        loading="{{loading}}"
+        bindtap="onImportWukong"
+      >悟空脚本专属拆分{{wukongCount > 1 ? '（' + wukongCount + ' 集）' : ''}}</button>
+    </view>
+    <view wx:if="{{!wukongCount}}" class="wukong-hint">未检出脚本表（含「台词」列的表格），此方式暂不可用</view>
+  </view>
+
+  <!-- 滚动区：分集预览在上，原文在下 -->
+  <scroll-view class="body" scroll-y>
+    <view wx:if="{{segments.length}}" class="seg-title">分集预览（智能多模态拆分 · 共 {{multiCount}} 集）</view>
+    <view wx:for="{{segments}}" wx:key="index" class="seg-card">
+      <view class="seg-name">{{item.name || ('第' + (index + 1) + ' 集')}}</view>
+      <view class="seg-sub">{{item.lineCount}} 行</view>
+      <view class="seg-prev">{{item.preview}}</view>
+    </view>
+
+    <view class="src-title">原文</view>
+    <view class="doc-text">{{text}}</view>
+
+    <view class="bottom-pad"></view>
+  </scroll-view>
+</view>

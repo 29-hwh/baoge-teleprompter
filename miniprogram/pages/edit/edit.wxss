@@ -1,0 +1,695 @@
+/* 编辑页外壳：自定义导航栏为 fixed，页面顶部需让出状态栏+导航高度（px 由 JS 注入） */
+.page {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* 自定义导航栏（navigationStyle: custom，用于拦截返回、确认未保存修改） */
+.ed-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1rpx solid var(--border);
+}
+
+.ed-nav-inner {
+  position: relative;
+  min-height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 左侧给返回按钮预留空间，避免标题与返回键重叠（标题再长也只会在预留区右侧居中） */
+  padding-left: 150rpx;
+  padding-right: 24rpx;
+  box-sizing: border-box;
+}
+
+.ed-nav-back {
+  position: absolute;
+  left: 16rpx;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 20rpx 0 8rpx;
+  color: var(--accent);
+  font-size: 30rpx;
+}
+
+.ed-nav-back:active {
+  opacity: 0.6;
+}
+
+.ed-nav-back-ico {
+  font-size: 48rpx;
+  line-height: 1;
+  margin-right: 4rpx;
+  font-weight: 300;
+}
+
+.ed-nav-title {
+  /* 标题宽度受父容器 padding 限制，最多占满预留区、永不侵入返回键区域 */
+  max-width: 100%;
+  /*
+   * 字号 32rpx → 30rpx：窄屏(320px)下标题可用宽约 466rpx，30rpx 字号每行可容
+   * 约 15 字，两行即可完整放下 maxlength=30 的全长标题，末尾不再被省略号截断。
+   * （原 32rpx 每行约 14 字，两行仅约 28 字，30 字标题在窄屏会少显示 1-2 字）
+   */
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  /* 允许换行而非横向溢出/裁切：常规标题单行居中，超长标题折两行仍完整显示 */
+  white-space: normal;
+  /* 长英文/数字标题（无空格不换行）也强制断行，避免横向溢出被裁切 */
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  /*
+   * 行高 42rpx → 40rpx：两行仅 80rpx，始终 ≤ 导航标题行的 88rpx，
+   * 导航栏高度保持恒定 → 既不撑高导航栏，也不会遮挡下方首张卡片（标题输入框）。
+   */
+  line-height: 40rpx;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* 退出确认弹窗（居中卡片，iOS 风格） */
+.ed-exit-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 120;
+}
+
+.ed-exit-card {
+  width: 80%;
+  max-width: 600rpx;
+  background: var(--bg-card);
+  border-radius: 28rpx;
+  padding: 48rpx 36rpx 36rpx;
+  box-sizing: border-box;
+}
+
+.ed-exit-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+}
+
+.ed-exit-sub {
+  font-size: 26rpx;
+  color: var(--text-tertiary);
+  text-align: center;
+  margin: 12rpx 0 32rpx;
+}
+
+.ed-exit-btn {
+  text-align: center;
+  padding: 24rpx 0;
+  border-radius: 16rpx;
+  font-size: 31rpx;
+  font-weight: 600;
+  margin-top: 16rpx;
+}
+
+.ed-exit-btn.primary {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.ed-exit-btn.ghost {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.ed-exit-btn.danger {
+  background: transparent;
+  color: var(--danger);
+}
+
+.ed-exit-btn:active {
+  opacity: 0.7;
+}
+
+.card-title {
+  margin-bottom: 16rpx;
+}
+
+.link-btn {
+  font-size: 26rpx;
+  color: var(--accent);
+  padding: 4rpx 12rpx;
+}
+
+.link-btn.danger {
+  color: var(--danger);
+  margin-left: 16rpx;
+}
+
+.textarea {
+  height: 520rpx;
+  margin-top: 8rpx;
+}
+
+/*
+ * 原生输入框显式配色：WeChat input/textarea 是原生组件，部分基础库不继承
+ * page 的 CSS 变量（var(--text)），会退回默认黑色 → 深色卡片上文字不可见。
+ * 这里在页面作用域内写死实际色值，保证「标题/正文文字」始终清晰可见。
+ */
+.ed-title-input,
+.ed-body-text {
+  color: #ffffff;
+  caret-color: #ffffff;
+}
+
+/*
+ * 台本标题（可编辑）：textarea + auto-height → 长标题自动换行、完整显示。
+ * 这里补齐完整盒模型，不再依赖全局 .input（后者只保证 width:100%，
+ * 无法解决「单行硬裁切」）。要点：
+ *  - min-height 88rpx：空/短标题时与原来的单行输入框等高，视觉不变、不跳动；
+ *  - max-height 264rpx：极端长标题的兜底上限（约 5 行），超出内部可滚动，
+ *    绝不无限撑高卡片、不挤压下方的「台本内容」卡片与按钮；
+ *  - word-break / overflow-wrap：中英混排、无空格长串（长英文、数字、URL）
+ *    也能正常断行，不被横向裁切（需求：多种分辨率与中英混合均正常）。
+ */
+.ed-title-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 88rpx;
+  max-height: 264rpx;
+  background: var(--bg-elevated);
+  border: 1rpx solid var(--border);
+  border-radius: 12rpx;
+  padding: 20rpx 24rpx;
+  font-size: 30rpx;
+  line-height: 1.6;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* 占位符同样显式配色，避免只剩光标不见提示 */
+.ed-title-ph,
+.ed-body-ph {
+  color: #636366;
+}
+
+.stat-bar {
+  margin-top: 20rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid var(--border);
+}
+
+.role-list {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.role-chip {
+  display: flex;
+  align-items: center;
+  padding: 12rpx 24rpx;
+  margin: 0 16rpx 16rpx 0;
+  background: var(--bg-elevated);
+  border-radius: 999rpx;
+}
+
+.role-dot {
+  width: 20rpx;
+  height: 20rpx;
+  border-radius: 50%;
+  margin-right: 12rpx;
+}
+
+.role-name {
+  font-size: 28rpx;
+  margin-right: 12rpx;
+}
+
+.role-del {
+  margin-left: 8rpx;
+  font-size: 30rpx;
+  line-height: 1;
+  color: var(--text-tertiary);
+  padding: 0 8rpx;
+}
+
+.role-del:active {
+  color: var(--danger);
+}
+
+.role-merge {
+  margin-left: 10rpx;
+  font-size: 22rpx;
+  color: var(--accent);
+  padding: 4rpx 14rpx;
+  border: 1rpx solid var(--accent);
+  border-radius: 8rpx;
+}
+
+.role-merge:active {
+  opacity: 0.6;
+}
+
+.role-count {
+  color: var(--text-tertiary);
+}
+
+.manual-tip {
+  margin-top: 12rpx;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.manual-chip {
+  font-size: 24rpx;
+  padding: 6rpx 16rpx;
+  margin: 6rpx 12rpx 0 0;
+  background: var(--bg-elevated);
+  border-radius: 8rpx;
+  color: var(--text-secondary);
+}
+
+.tip-bar {
+  margin-top: 16rpx;
+  background: rgba(255, 209, 102, 0.12);
+  color: var(--accent);
+  font-size: 24rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 12rpx;
+}
+
+/* ============ 角色显示选择（次级入口，默认折叠；勾选角色 → 提词页只显示其台词） ============ */
+.role-display-block {
+  margin-top: 24rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid var(--border);
+}
+
+/* 折叠行：次级视觉权重——小字、次级色、不做粗体标题，避免与主线编辑操作抢注意力 */
+.role-display-entry {
+  display: flex;
+  align-items: center;
+  padding: 12rpx 4rpx;
+}
+.role-display-entry-hover {
+  opacity: 0.6;
+}
+.role-display-entry-label {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+}
+.role-display-entry-state {
+  margin-left: 12rpx;
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+.role-display-entry-arrow {
+  margin-left: auto;
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.role-display-panel {
+  margin-top: 8rpx;
+  padding: 20rpx;
+  background: var(--bg-elevated);
+  border: 1rpx solid var(--border);
+  border-radius: 16rpx;
+}
+.role-display-panel .switch-row {
+  padding: 18rpx 4rpx;
+}
+
+/* 「高亮方式」小标题：面板内的次级说明，不做一级标题样式 */
+.role-hl-label {
+  margin: 4rpx 0 10rpx 4rpx;
+  color: var(--text-secondary);
+}
+
+/* 漏词风险说明：暖色警示，进面板第一眼看到 */
+.role-risk {
+  display: flex;
+  flex-direction: column;
+  padding: 16rpx 18rpx;
+  margin-bottom: 8rpx;
+  background: rgba(255, 159, 10, 0.12);
+  border: 1rpx solid rgba(255, 159, 10, 0.45);
+  border-radius: 12rpx;
+}
+.role-risk-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #FF9F0A;
+  margin-bottom: 6rpx;
+}
+.role-risk-text {
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+/* 智能已关闭时的占位说明（配置保留，关掉开关即恢复） */
+.role-display-off-tip {
+  margin-top: 12rpx;
+  padding: 18rpx;
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  background: var(--bg);
+  border-radius: 12rpx;
+  text-align: center;
+}
+
+/* 面板内紧凑操作行：缩小上间距，降低信息密度 */
+.role-display-panel .role-display-actions {
+  margin-top: 16rpx;
+}
+.role-display-list {
+  display: flex;
+  flex-wrap: wrap;
+}
+.role-display-item {
+  display: flex;
+  align-items: center;
+  padding: 10rpx 24rpx;
+  margin: 0 16rpx 16rpx 0;
+  background: var(--bg-elevated);
+  border: 1rpx solid var(--border);
+  border-radius: 999rpx;
+  color: var(--text);
+}
+.role-display-item.on {
+  border-color: #34C759;
+  background: rgba(52, 199, 89, 0.14);
+}
+.role-display-item-hover {
+  opacity: 0.6;
+}
+.role-display-actions {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+.seg-btn {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  padding: 6rpx 20rpx;
+  background: var(--bg-elevated);
+  border: 1rpx solid var(--border);
+  border-radius: 999rpx;
+}
+.seg-btn.on {
+  color: #ffffff;
+  background: #34C759;
+  border-color: #34C759;
+}
+.seg-btn:active {
+  opacity: 0.7;
+}
+.role-display-check {
+  color: #34C759;
+  margin-right: 8rpx;
+  font-size: 26rpx;
+}
+.role-display-name {
+  margin-right: 10rpx;
+  font-size: 26rpx;
+}
+.role-display-count {
+  opacity: 0.65;
+}
+
+.action-bar {
+  margin-top: 32rpx;
+}
+
+.btn-ghost {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
+
+/* 导入智能分段弹窗（iOS 底部卡片风格） */
+.ed-modal-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 100;
+}
+
+.ed-modal {
+  width: 100%;
+  background: var(--bg-card);
+  border-top-left-radius: 28rpx;
+  border-top-right-radius: 28rpx;
+  padding: 40rpx 36rpx calc(40rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.ed-modal-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+}
+
+.ed-modal-sub {
+  font-size: 24rpx;
+  color: var(--text-tertiary);
+  text-align: center;
+  margin: 12rpx 0 28rpx;
+}
+
+.ed-modal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 0;
+  border-top: 1rpx solid var(--border);
+  border-bottom: 1rpx solid var(--border);
+}
+
+.ed-modal-row-text {
+  flex: 1;
+  margin-right: 24rpx;
+}
+
+.ed-modal-row-b {
+  font-size: 30rpx;
+  color: var(--text);
+  margin-bottom: 6rpx;
+}
+
+.ed-modal-btns {
+  display: flex;
+  margin-top: 32rpx;
+}
+
+.ed-modal-btn {
+  flex: 1;
+  margin-right: 20rpx;
+  text-align: center;
+  padding: 24rpx 0;
+  border-radius: 14rpx;
+  font-size: 31rpx;
+  font-weight: 600;
+}
+
+.ed-modal-btn:last-child {
+  margin-right: 0;
+}
+
+.ed-modal-btn.ghost {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.ed-modal-btn.primary {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+/* 开关行（与设置页一致：文案在左、开关在右） */
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22rpx 28rpx;
+}
+
+.switch-text {
+  flex: 1;
+  margin-right: 24rpx;
+}
+
+.switch-title {
+  font-size: 30rpx;
+  color: var(--text);
+  margin-bottom: 4rpx;
+}
+
+/* iOS 开关（与设置页一致） */
+.switch {
+  width: 92rpx;
+  height: 52rpx;
+  border-radius: 999rpx;
+  background: rgba(120, 120, 128, 0.32);
+  position: relative;
+  flex-shrink: 0;
+  transition: background 200ms;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 4rpx;
+  left: 4rpx;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2rpx 4rpx rgba(0, 0, 0, 0.2);
+  transition: transform 200ms;
+}
+
+.switch.on {
+  background: #34C759;
+}
+
+.switch.on::after {
+  transform: translateX(40rpx);
+}
+
+/* 首次使用引导（只看一次）
+   ------------------------------------------------------------------
+   与提词页引导统一为同一套层级：标题 34 / 副标 22 / 步骤标题 26 / 说明 21 / 按钮 28。
+   同样按 0.85 等比缩小，并加 max-height 84vh + 三段式（标题固定/步骤可滚/按钮吸底），
+   小屏与分屏下都不会溢出或裁掉主按钮。 */
+.ed-guide-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.ed-guide-card {
+  width: 68%;
+  max-width: 440rpx;
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 28, 30, 0.94);
+  border-radius: 20rpx;
+  padding: 28rpx 26rpx 24rpx;
+  box-sizing: border-box;
+}
+
+.ed-guide-head {
+  flex-shrink: 0;
+}
+
+.ed-guide-title {
+  font-size: 34rpx;
+  color: #FFD166;
+  font-weight: 600;
+  text-align: center;
+}
+
+.ed-guide-sub {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  margin-top: 8rpx;
+}
+
+.ed-guide-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-top: 22rpx;
+}
+
+.ed-guide-item {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 20rpx;
+}
+
+.ed-guide-item:last-child {
+  margin-bottom: 0;
+}
+
+.ed-guide-ico {
+  font-size: 32rpx;
+  width: 52rpx;
+  flex-shrink: 0;
+  line-height: 1.35;
+}
+
+.ed-guide-txt {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.ed-guide-b {
+  font-size: 26rpx;
+  color: #ffffff;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.ed-guide-d {
+  font-size: 21rpx;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 4rpx;
+  line-height: 1.45;
+}
+
+.ed-guide-btn {
+  flex-shrink: 0;
+  margin-top: 18rpx;
+  background: #FFD166;
+  color: #1C1C1E;
+  font-size: 28rpx;
+  font-weight: 600;
+  text-align: center;
+  padding: 20rpx 0;
+  border-radius: 14rpx;
+}

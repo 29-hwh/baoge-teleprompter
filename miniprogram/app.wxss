@@ -1,0 +1,168 @@
+page {
+  /* 苹果风深色主题变量，集中在这里改 */
+  --bg: #000000;
+  --bg-card: #1C1C1E;
+  --bg-elevated: #2C2C2E;
+  --text: #FFFFFF;
+  --text-secondary: #98989E;
+  --text-tertiary: #636366;
+  --border: rgba(84, 84, 88, 0.6);
+  --border-strong: rgba(84, 84, 88, 0.9);
+  --accent: #0A84FF;
+  --accent-blue: #0A84FF;
+  --accent-green: #34C759;
+  --danger: #FF453A;
+
+  background: var(--bg);
+  color: var(--text);
+  font-size: 30rpx;
+  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
+}
+
+view, text, input, textarea, scroll-view {
+  box-sizing: border-box;
+}
+
+.container {
+  min-height: 100vh;
+  padding: 24rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
+}
+
+/* 卡片 */
+.card {
+  background: var(--bg-card);
+  border-radius: 20rpx;
+  padding: 28rpx 32rpx;
+  margin-bottom: 24rpx;
+  border: 1rpx solid var(--border);
+}
+
+.card-title {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 20rpx;
+}
+
+/* 行布局 */
+.row {
+  display: flex;
+  align-items: center;
+}
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* 文字 */
+.muted {
+  color: var(--text-secondary);
+  font-size: 26rpx;
+}
+
+.tiny {
+  color: var(--text-tertiary);
+  font-size: 24rpx;
+}
+
+.strong {
+  font-weight: 500;
+}
+
+/* 按钮 */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  font-weight: 500;
+  border: 1rpx solid var(--border-strong);
+  color: var(--text);
+  background: transparent;
+  padding: 0 32rpx;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #1C1C1E;
+  border-color: var(--accent);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-danger {
+  color: var(--danger);
+  border-color: rgba(255, 107, 107, 0.4);
+}
+
+.btn::after {
+  border: none;
+}
+
+.btn-hover {
+  opacity: 0.7;
+}
+
+/* 输入框 */
+.input {
+  width: 100%;
+  background: var(--bg-elevated);
+  border-radius: 12rpx;
+  padding: 20rpx 24rpx;
+  font-size: 30rpx;
+  /* 原生输入组件不总是继承 var()，用实际色值确保文字在深色底上可见 */
+  color: #ffffff;
+  border: 1rpx solid var(--border);
+}
+
+.textarea {
+  width: 100%;
+  background: var(--bg-elevated);
+  border-radius: 12rpx;
+  padding: 24rpx;
+  font-size: 29rpx;
+  line-height: 1.7;
+  color: #ffffff;
+  border: 1rpx solid var(--border);
+}
+
+/* 空状态 */
+.empty {
+  padding: 160rpx 0;
+  text-align: center;
+}
+
+.empty-title {
+  font-size: 30rpx;
+  color: var(--text-secondary);
+  margin-bottom: 16rpx;
+}
+
+/* 分割线 */
+.divider {
+  height: 1rpx;
+  background: var(--border);
+  margin: 24rpx 0;
+}
+
+/* 徽标 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}

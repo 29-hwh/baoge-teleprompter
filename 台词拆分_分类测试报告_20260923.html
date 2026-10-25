@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>台词拆分 · 分类测试报告</title>
+<style>
+  :root{
+    --ink:#1d1d1f; --ink2:#4a4a51; --ink3:#82828c; --line:#e3e3e8; --bg:#faf9f7;
+    --card:#ffffff; --ok:#1f7a4d; --okbg:#eef7f1; --bad:#b0342f; --badbg:#fbeeed;
+    --warn:#9a6b16; --warnbg:#fdf5e6; --accent:#3f5d8c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.75 -apple-system,"PingFang SC","Songti SC",system-ui,sans-serif}
+  .wrap{max-width:1000px;margin:0 auto;padding:40px 28px 80px}
+  header{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:26px}
+  h1{margin:0 0 6px;font-size:27px;letter-spacing:.5px}
+  .sub{color:var(--ink3);font-size:13px}
+  h2{font-size:18px;margin:38px 0 12px;padding-left:11px;border-left:4px solid var(--ink)}
+  h3{font-size:15px;margin:22px 0 8px;color:var(--ink2)}
+  p{margin:8px 0}
+  code{background:#f0efe9;padding:1px 5px;border-radius:3px;font-size:12.5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0 4px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .kpi b{display:block;font-size:24px;letter-spacing:.5px}
+  .kpi span{color:var(--ink3);font-size:12px}
+  .kpi.ok b{color:var(--ok)} .kpi.bad b{color:var(--bad)} .kpi.warn b{color:var(--warn)}
+  table{width:100%;border-collapse:collapse;background:var(--card);
+    border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:12px 0;font-size:13px}
+  th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#f3f2ec;font-weight:600;color:var(--ink2);white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  .tag{display:inline-block;padding:1px 8px;border-radius:20px;font-size:12px;font-weight:600}
+  .tag.ok{background:var(--okbg);color:var(--ok)}
+  .tag.bad{background:var(--badbg);color:var(--bad)}
+  .tag.warn{background:var(--warnbg);color:var(--warn)}
+  .tag.p{background:#eef1f7;color:var(--accent)}
+  .box{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--bad);
+    border-radius:6px;padding:14px 16px;margin:14px 0}
+  .box.good{border-left-color:var(--ok)}
+  .box.warn{border-left-color:var(--warn)}
+  .box.info{border-left-color:var(--accent)}
+  .box h3{margin-top:0}
+  .meta{color:var(--ink3);font-size:12px;margin-top:2px}
+  ul{margin:6px 0 6px 18px;padding:0} li{margin:3px 0}
+  .flow{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:12px 0;
+    font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:2;color:var(--ink2);overflow-x:auto}
+  .flow b{color:var(--ink)}
+  footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);color:var(--ink3);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>台词拆分 · 分类测试报告</h1>
+  <div class="sub">样本：网络采集 18 个（表格稿 9 · 纯文本稿 9）＋ 边界专项 7 组 ·
+    测试日期 2026-09-23 · 被测：baoge-teleprompter 台词拆分链路</div>
+</header>
+
+<div class="cards">
+  <div class="kpi ok"><b>8/8</b><span>表格稿样本全项通过</span></div>
+  <div class="kpi bad"><b>6/9</b><span>文本稿样本全项通过</span></div>
+  <div class="kpi ok"><b>7/7</b><span>边界专项通过</span></div>
+  <div class="kpi warn"><b>179 / 3</b><span>断言 通过 / 失败（另 2 项已知限制）</span></div>
+</div>
+
+<h2>一、测试设计</h2>
+<p>被测对象是小程序的「台词拆分」链路。它有两条载体、四条路径，测试按这两条载体分别构造样本，全部调用产品自身的函数，不另写一套解析：</p>
+<div class="flow">
+<b>表格稿（docx）</b> ─ extractDocxBlocks ─┬─ splitScripts(blocks)                  → 智能多模态拆分
+                                        └─ splitScripts(blocks,{mode:'wukong'})    → 悟空脚本专属拆分
+<b>段落稿（docx 无表格）</b> ─ splitParagraphScript
+<b>纯文本稿</b> ─┬─ smartSplitScripts(text)                 「智能拆分」按钮走这条
+              └─ splitImportBlocks(text, headings|blank|size)
+<b>格内拆行</b> ─ splitDialogueCell(text, 白名单)：软换行/段落边界先拆 → 段内再按说话人拆
+</div>
+
+<h3>断言口径</h3>
+<table>
+  <tr><th>编号</th><th>断言</th><th>说明</th></tr>
+  <tr><td>P1</td><td>不抛异常</td><td>文本路径：函数返回数组</td></tr>
+  <tr><td>P2</td><td>零丢字</td><td>输出重建后去空白，必须等于源（headings 模式标题行按「被剥离进 title」补回）</td></tr>
+  <tr><td>P3</td><td>块非空</td><td>每块 title / content 皆非空</td></tr>
+  <tr><td>Q1</td><td>集数守恒</td><td>非空表格数 == 拆出 segment 数（一表一集）</td></tr>
+  <tr><td>Q2</td><td>集名正确</td><td>集标题取自表格前段落 / 表内信息行</td></tr>
+  <tr><td>Q3</td><td>零丢字</td><td>台词列压平 == 输出行压平（多模态滤占位行 / 悟空原样保留，两种口径各自比对）</td></tr>
+  <tr><td>Q4</td><td>无粘连</td><td>输出行内不得出现第二个说话人（非行首、非引号内；联合说话人组不算）</td></tr>
+  <tr><td>Q5</td><td>角色归属</td><td>parseScript 后带角色的行占比（信息项）</td></tr>
+  <tr><td>Q6</td><td>占位行策略</td><td>多模态过滤、悟空保留</td></tr>
+  <tr><td>Q7</td><td>表头前台词救回</td><td>表头在表格中部时，其前面的台词行不得丢</td></tr>
+</table>
+
+<h2>二、样本分类矩阵</h2>
+<p>样本取自公开网络内容，只提取其<strong>格式特征</strong>（说话人前缀写法、分隔方式、舞台提示、集/场标题、表头写法），正文按需节选改写。来源见 <code>fixtures/SOURCES.md</code>。</p>
+
+<h3>表格稿（<code>fixtures/table/</code>）</h3>
+<table>
+  <tr><th>编号</th><th>类型</th><th>关键格式特征</th><th>结果</th></tr>
+  <tr><td>T1</td><td>短剧拍摄脚本表</td><td>表头 镜头/画面/台词/备注；表格前有「第N集」段落；两表两集；同格多人</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>T2</td><td>AI 分镜表（七列）</td><td>镜号/场景/景别/画面描述/台词/时长/转场；<code>无</code> 占位；<code>｢｣</code> 引号；<code>(颤抖)</code> 内联语气</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>T3</td><td>对话体两列表</td><td>表头 角色/台词；无镜头列（台词=末列）</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>T4</td><td>广播剧台本表</td><td>表头 角色/台词/音效；台词列在中间（非末列，靠表头定位）</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>T5</td><td>无表头旧稿</td><td>无表头，三列；legacy 按「3 列取第 3 列」推断</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>T5b</td><td>无表头 + 台词非末列</td><td>无表头，四列，末列是「备注」</td><td><span class="tag warn">探针·暴露限制</span></td></tr>
+  <tr><td>T6</td><td>表头在表格中部</td><td>表头前已有完整四列的台词行</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>T7</td><td>占位行与空行</td><td><code>（无台词）</code>/<code>—</code>/<code>无</code>/空行；同格「台词+（无对白）+台词」</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>T8</td><td>多人同格</td><td>句末标点相隔 / 软换行 / 联合说话人 / 无标点真粘连</td><td><span class="tag ok">通过</span></td></tr>
+</table>
+
+<h3>纯文本稿（<code>fixtures/text/</code>）</h3>
+<table>
+  <tr><th>编号</th><th>类型</th><th>关键格式特征</th><th>smart</th><th>headings</th><th>blank</th><th>结果</th></tr>
+  <tr><td>01</td><td>短剧（分集）</td><td><code>第N集</code> + <code>1-1 场景 时间 内</code> + <code>△</code> + <code>角色 os:</code> + <code>角色（动作）：</code></td><td>3</td><td>4</td><td>4</td><td><span class="tag bad">失败</span></td></tr>
+  <tr><td>02</td><td>相声</td><td>甲/乙/丙 单字代号 + 轮次空行</td><td>3</td><td>1</td><td>3</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>03</td><td>小品</td><td><code>简称：孙</code> + 单字前缀 + <code>[舞台说明]</code> + <code>二人齐：</code></td><td>4</td><td>1</td><td>4</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>04</td><td>话剧（幕/场）</td><td><code>序幕</code>/<code>第一幕</code>/<code>第二场</code> + <code>角色：</code> + <code>（动作）</code></td><td>1</td><td>5</td><td>6</td><td><span class="tag bad">失败</span></td></tr>
+  <tr><td>05</td><td>广播剧</td><td><code>旁白：</code> + <code>【音效】</code> + <code>角色：（语气）</code></td><td>4</td><td>2</td><td>4</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>06</td><td>口播稿</td><td><code>【0-7秒｜钩子】</code> 时间轴 + 无角色前缀独白</td><td>5</td><td>1</td><td>5</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>07</td><td>剧本杀（DM手册）</td><td><code>台词：</code>整段 + 段内冒号 + <code>小剧场：</code>多人对白</td><td>4</td><td>2</td><td>4</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>08</td><td>英文剧本</td><td><code>SCENE N</code> + <code>INT./EXT.</code> + <code>NAME: line</code></td><td>3</td><td>1</td><td>6</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>09</td><td>边界写法总集</td><td>同行多说话人/联合/引号内引用/真粘连/间隔号名/单字名/占位行</td><td>2</td><td>3</td><td>3</td><td><span class="tag bad">失败</span></td></tr>
+</table>
+
+<h3>边界专项（B1–B7）</h3>
+<table>
+  <tr><th>编号</th><th>场景</th><th>结果</th></tr>
+  <tr><td>B1</td><td>台词列表头同义列名（台词/对白/内容/独白/口播/话术）都应被识别</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>B2</td><td>台词正文里出现「第3集」字样，不应被误判为分集边界</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>B3</td><td>空文本 / 纯空白 / 空块 / 空串：均不崩、返回空</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>B4</td><td>表头出现在表格末行（其后无数据）→ 表头之前的台词不被吞</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>B5</td><td>单元格内段落边界（<code>&lt;/w:p&gt;&lt;w:p&gt;</code>）与软换行（<code>&lt;w:br/&gt;</code>）都拆成多行</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>B6</td><td>含「角色」列，且台词格里还有第二说话人 → 合并后仍拆两行、各自带角色</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td>B7</td><td>占位形态盘点（信息）：<code>无</code>/<code>N/A</code>/<code>/</code> 未识别，其余识别</td><td><span class="tag ok">通过</span></td></tr>
+</table>
+
+<h2>三、发现的问题</h2>
+
+<div class="box">
+  <h3><span class="tag p">P1 高</span> smartSplitScripts 丢弃「首个边界之前」的内容</h3>
+  <p class="meta">影响入口：<code>preview.js:61</code>「智能拆分（纯文字档）」按钮、<code>index.js:183</code> 长文本导入判定、<code>importSave.js</code>。3 个样本复现，100% 稳定。</p>
+  <p>只要稿件在第一个「第N集」之前有内容（剧名、出场人物表、前言），这段内容在「智能拆分」后<strong>不在任何输出块里</strong>，静默丢失：</p>
+  <table>
+    <tr><th>样本</th><th>首个边界前的内容（被丢弃）</th><th>smart 切出</th></tr>
+    <tr><td>01 短剧</td><td><code>剧名：《掌心暗渡》</code></td><td>3 篇</td></tr>
+    <tr><td>04 话剧</td><td><code>话剧《爱情疯人院》（节选）</code> + <code>出场人物：周游、男子甲…</code></td><td>1 篇</td></tr>
+    <tr><td>09 边界</td><td><code>边界写法总集（说话人前缀 / 分隔 / 占位 / 标题）</code></td><td>2 篇</td></tr>
+  </table>
+  <p><strong>根因</strong>：<code>smartSplitScripts → findSeriesBoundaries / findHeadingBoundaries → sliceByBoundaries(lines, idxs)</code>，切片的起点是 <code>idxs[0]</code>，<code>idxs[0]</code> 之前的行从不进入任何块。<br>
+  <strong>建议</strong>：在 <code>sliceByBoundaries</code> 里，若 <code>idxs[0] &gt; 0</code> 且其前存在非空行，先在 <code>idxs</code> 头部补一个下标 <code>0</code>，让「前言」成为独立一篇（标题走 <code>autoName</code>）。</p>
+</div>
+
+<div class="box">
+  <h3><span class="tag p">P2 高</span> 无表头旧稿：台词列不在末列时整篇台词丢失</h3>
+  <p class="meta">影响入口：所有无表头（或表头未被识别）的表格稿导入。探针样本 T5b 复现。</p>
+  <p>四列「镜号 / 画面 / 台词 / 备注」且<strong>没有表头行</strong>的旧稿，多模态与悟空两条路径输出<strong>都是 0 行</strong>：</p>
+  <table>
+    <tr><th>T5b 源（台词列）</th><th>多模态输出</th><th>悟空输出</th></tr>
+    <tr><td><code>妈妈：吃饭了，别玩手机了。</code> / <code>孩子：马上，这集看完。</code> / …共 4 行</td><td>0 行</td><td>0 行</td></tr>
+  </table>
+  <p><strong>根因</strong>：<code>splitTableLegacy</code> 的列推断是「≥4 列 → <code>dialogueCol = cols-1</code>（末列）」。末列是「备注」（空），真正的台词列被整列跳过 —— 属零遗漏红线级别。<br>
+  <strong>建议</strong>：无表头时不要写死末列；改为<strong>按内容选列</strong>：在候选列里统计「像台词的行数」（<code>cellLooksLikeDialogue</code>），取命中最多的那一列；全空或全不命中再退回列数推断。</p>
+</div>
+
+<div class="box">
+  <h3><span class="tag p">P3 中</span> 「第N幕 / 第N场」两条文本路径口径不一致</h3>
+  <p class="meta">影响入口：话剧 / 舞台剧类稿件。样本 04 复现。</p>
+  <table>
+    <tr><th>路径</th><th>结果</th><th>标题</th></tr>
+    <tr><td><code>smartSplitScripts</code>（「智能拆分」按钮）</td><td><span class="tag bad">1 篇</span></td><td>序幕　周游坐在舞台中央</td></tr>
+    <tr><td><code>splitImportBlocks(headings)</code></td><td><span class="tag ok">5 篇</span></td><td>…｜序幕…｜第一幕｜第二幕｜第二场（夜晚）</td></tr>
+  </table>
+  <p><strong>根因</strong>：<code>findHeadingBoundaries</code> 用 <code>EP_HEAD_RE</code>，类别字是 <code>[集期话卷部]</code>，<strong>不含「幕/场」</strong>；而 <code>splitImportBlocks</code> 的 <code>HEAD_LINE_RE</code> 是 <code>[集场章节回幕篇部季话]</code>，<strong>含「幕/场」</strong>。同一条产品，两条文本路径对「什么算标题」判定不同。<br>
+  <strong>建议</strong>：让 <code>findHeadingBoundaries</code> 直接复用 <code>HEAD_LINE_RE</code>（或把 <code>EP_HEAD_RE</code> 的类别字补全为 <code>[集场章节回幕篇部季话]</code>），两条路径统一口径。</p>
+</div>
+
+<div class="box warn">
+  <h3><span class="tag warn">P4 低</span> 分镜表用 <code>｢｣</code> 表示台词时，角色无法归属</h3>
+  <p>AI 分镜表常写成 <code>母亲｢回来啦，先洗手。｣</code>、<code>沈亦｢别——｣母亲｢吃完再走。｣</code> —— 用 <code>｢｣</code> 而非冒号分隔，说话人识别（依赖 <code>名字：</code>）拿不到角色，<code>parseScript</code> 后角色覆盖 <strong>0/6</strong>。文本本身零丢字、也未粘连，属「格式差异」而非丢失：台词照常进提词器，只是没有角色高亮 / 角色筛选。<br>
+  <strong>建议</strong>：若要支持，可在 <code>splitDialogueCell</code> 增加 <code>名字｢…｣</code> 这一形态的识别（左边界为行首/非汉字时优先）。</p>
+</div>
+
+<div class="box warn">
+  <h3><span class="tag warn">P5 低</span> 占位形态 <code>无</code> / <code>N/A</code> / <code>/</code> 未被识别为占位行</h3>
+  <p><code>isPlaceholderLine</code> 只认 <code>（无台词）</code>、<code>无台词</code>、<code>无对白</code>、破折号类。分镜表最常见的占位是单独的 <code>无</code>（T2 里出现 2 次），会被原样输出成一行「无」进提词器。实测识别情况：</p>
+  <p><code>无:N　（无台词）:Y　无台词:Y　—:Y　-:Y　（无对白）:Y　N/A:N　/:N</code></p>
+  <p><strong>建议</strong>：把「整行只有一个 <code>无</code>」以及 <code>N/A</code>、<code>／</code>、<code>/</code> 纳入占位判定。注意别误伤「无」开头的正文（只认整行恰好等于这些串）。</p>
+</div>
+
+<h2>四、已确认可用的能力（回归基线）</h2>
+<div class="box good">
+  <ul>
+    <li><strong>表格稿 8/8 全绿</strong>：一表一集、集标题识别、台词列定位（含列名变体与中间列）、角色列合并、表头在末行/中部都不吞台词。</li>
+    <li><strong>多人同格拆行</strong>（T8）：句末标点相隔、软换行、联合说话人（<code>王建华、杨凤：</code>不误切）、无标点真粘连（靠说话人白名单救回）—— 10 行无一粘连、零丢字。</li>
+    <li><strong>占位行逐行过滤</strong>（T7）：同格「台词 + （无对白）+ 台词」不连坐；多模态滤除占位行（4 行），悟空原样保留（8 行），两模式分工符合设计。</li>
+    <li><strong>表格前/表头前台词救回</strong>（T6、B4）：表头在表格中部或末行时，前面的台词行不被丢。</li>
+    <li><strong>极端输入健壮</strong>（B3）：空文本、纯空白、空块、空串均不崩并返回空。</li>
+    <li><strong>英文剧本</strong>（08）：<code>SCENE N</code> 结构被正确切成 3 篇（走「系列名+数字」识别）。</li>
+  </ul>
+</div>
+
+<h2>五、结论与优先级建议</h2>
+<ol>
+  <li><strong>表格稿链路稳</strong>：这是小程序的主用法（拍摄脚本表），8 个类型样本全项通过。唯一风险是 P2（无表头 + 台词非末列整篇丢失）—— 建议优先修，它是静默全丢。</li>
+  <li><strong>文本稿链路的共性问题是「边界之前的内容」</strong>：P1 丢前言、P3 话剧幕/场不识别，都出在「找边界 + 按边界切」这一段。修法都不大（补下标 0 / 统一标题正则）。</li>
+  <li><strong>P4 / P5 属格式覆盖</strong>：不影响零丢字，影响观感与角色功能。可按需排期。</li>
+</ol>
+
+<h2>六、可复跑入口</h2>
+<div class="flow">
+node script_fixture_test.js [--json out.json]     # 分类测试台（表格 9 + 文本 9 + 边界 7）
+node fixture_findings_repro.js                    # P1 / P2 / P3 三条最小复现
+fixtures/SOURCES.md                               # 样本来源清单
+fixtures/table_specs.js                           # 表格稿 spec + OOXML 生成器
+</div>
+
+<footer>
+  本报告由「台词拆分 · 分类测试台」生成 · 样本取自公开网络内容，仅提取格式特征用于内部测试 ·
+  全部断言调用产品自身函数（<code>util.js / parser.js / role.js</code>），未修改任何产品代码。
+</footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>悟空脚本专属拆分 · 机制与验证报告</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1f2328; --ink2:#5b6472; --ink3:#8b95a3;
+    --line:#e5e8ed; --brand:#2f7d6b; --brand-l:#e8f4f0; --warn:#b3542b; --warn-l:#fdf1ea;
+    --code:#f2f4f7; --ok:#2f7d6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:940px;margin:0 auto;padding:40px 24px 80px}
+  header{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:28px}
+  h1{font-size:27px;line-height:1.35;margin:0 0 8px;letter-spacing:-.3px}
+  .sub{color:var(--ink2);font-size:14px}
+  .meta{margin-top:10px;font-size:12.5px;color:var(--ink3);display:flex;gap:18px;flex-wrap:wrap}
+  h2{font-size:18px;margin:38px 0 14px;padding-left:11px;border-left:4px solid var(--brand);line-height:1.3}
+  h3{font-size:15px;margin:22px 0 8px;color:var(--ink)}
+  p{margin:10px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:14px 0}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0 6px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .kpi .n{font-size:24px;font-weight:700;letter-spacing:-.5px;color:var(--brand)}
+  .kpi .l{font-size:12.5px;color:var(--ink2);margin-top:3px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.5px;background:var(--card);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f0f2f5;font-weight:600;font-size:12.5px;color:var(--ink2);white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  code{background:var(--code);padding:1.5px 6px;border-radius:5px;font-size:12.5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  pre{background:#1f2328;color:#e6e8eb;padding:14px 16px;border-radius:10px;overflow-x:auto;
+    font:12.5px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:12px 0}
+  pre .c{color:#8b95a3}
+  pre .g{color:#7fd1a8}
+  pre .r{color:#f2a08a}
+  ul,ol{margin:10px 0;padding-left:22px}
+  li{margin:5px 0}
+  .pill{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:20px;
+    background:var(--brand-l);color:var(--brand);font-weight:600}
+  .pill.w{background:var(--warn-l);color:var(--warn)}
+  .flow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:16px 0}
+  .box{flex:1;min-width:150px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .box .t{font-size:12px;color:var(--ink3);margin-bottom:4px}
+  .box .v{font-size:13.5px;font-weight:600}
+  .box.hi{border-color:var(--brand);background:var(--brand-l)}
+  .arrow{color:var(--ink3);font-size:18px}
+  .note{font-size:13px;color:var(--ink2);background:#fbfbfc;border-left:3px solid var(--line);padding:10px 14px;margin:12px 0;border-radius:0 8px 8px 0}
+  .ok{color:var(--ok);font-weight:600}
+  .bad{color:var(--warn);font-weight:600}
+  .foot{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>悟空脚本专属拆分 · 机制与验证报告</h1>
+  <div class="sub">从「拆分步骤1：把台词栏进行复制得出结果」反推的第四种拆分方式，并同步融入智能多模态拆分</div>
+  <div class="meta">
+    <span>2026-09-19</span>
+    <span>项目：宝哥的提词器（baoge-teleprompter）</span>
+    <span>改动：util.js / preview 页 / index 页</span>
+  </div>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><div class="n">8 / 10</div><div class="l">真实稿件逐行完全一致的集数</div></div>
+  <div class="kpi"><div class="n">10 / 10</div><div class="l">非空台词行 100% 一致的集数</div></div>
+  <div class="kpi"><div class="n">3500 篇</div><div class="l">随机模糊测试文档数（112,376 断言）</div></div>
+  <div class="kpi"><div class="n">42 / 42</div><div class="l">新增 round31 回归套件</div></div>
+</div>
+
+<h2>一、机制从哪来：三份文件是同一条流水线的三个断面</h2>
+
+<div class="flow">
+  <div class="box"><div class="t">源稿</div><div class="v">建华&amp;小凤的生活81-90.docx<br><span style="font-weight:400;font-size:12.5px;color:#5b6472">10 个表格＝10 集，四列：镜头 · 画面/动作 · <b>台词</b> · 备注</span></div></div>
+  <div class="arrow">→</div>
+  <div class="box"><div class="t">另一种载体</div><div class="v">转表格拆分.xlsx<br><span style="font-weight:400;font-size:12.5px;color:#5b6472">同一内容的工作表版（A 镜头号 · B 画面 · C 台词 · D 备注）</span></div></div>
+  <div class="arrow">→</div>
+  <div class="box hi"><div class="t">「拆分步骤1」的产物</div><div class="v">最终台词.docx<br><span style="font-weight:400;font-size:12.5px;color:#2f7d6b">283 段：集名 → 「台词」列名 → 台词栏逐行</span></div></div>
+</div>
+
+<div class="note">
+  <b>「拆分步骤1」这几个字在三份文件里都搜不到。</b>它是宝哥对<b>人工操作动作</b>的口头命名 ——
+  所以这套机制是<b>从产物反推规则</b>，不是抄某处说明。这也决定了验证方式：
+  <b>把反推出来的规则跑一遍，与产物逐行对账</b>。
+</div>
+
+<h2>二、归纳出的拆分机制</h2>
+
+<h3>复制规则</h3>
+<ol>
+  <li><b>一集 = 一个表格。</b>逐表独立处理，表格顺序＝集顺序。</li>
+  <li><b>字段映射：只取「台词」列。</b>镜头 / 画面 / 备注三列与「人物｜场景｜道具」摘要行一律不进结果。</li>
+  <li><b>行序：</b>严格按表格行序自上而下；<b>单元格内部</b>若含多个软换行（<code>&lt;w:br/&gt;</code>）或多个段落（<code>&lt;w:p&gt;</code>），按出现顺序拆成多行。</li>
+  <li><b>内容原样：</b>不做语义清洗 —— 占位行（<code>（无台词）</code> / <code>（无对白）</code> / <code>—</code>）与空行<b>忠实保留</b>。
+      这是「复制」不是「提纯」。只做两件事：清掉<b>行尾</b>空白；<b>折叠连续空行</b>为 1 行；
+      整集<b>末尾</b>空行去掉、<b>首部</b>空行保留（它标记「这一行画面没有台词」，是有意义的位置信息）。</li>
+</ol>
+
+<h3>字段映射表</h3>
+<table>
+  <tr><th>源表格位置</th><th>内容</th><th>进结果？</th><th>说明</th></tr>
+  <tr><td>R1（单格）</td><td>集名，如「建华&amp;小凤的生活81」</td><td class="ok">✓ 作为 segment.name</td><td>不混进台词正文</td></tr>
+  <tr><td>R2（单格）</td><td>人物｜场景｜道具 摘要</td><td class="bad">✗</td><td>不是台词</td></tr>
+  <tr><td>R3 表头</td><td>镜头 / 画面·动作 / <b>台词</b> / 备注</td><td class="bad">✗（仅用于定位）</td><td>列名只作元数据 <code>column:'台词'</code>，不进正文</td></tr>
+  <tr><td>R4+ 第 1 列</td><td>镜头号</td><td class="bad">✗</td></tr>
+  <tr><td>R4+ 第 2 列</td><td>画面 / 动作描述</td><td class="bad">✗</td></tr>
+  <tr><td>R4+ <b>台词列</b></td><td>台词（格内可能多行）</td><td class="ok">✓ 逐行复制</td><td>含占位行与空行</td></tr>
+  <tr><td>R4+ 末列</td><td>备注</td><td class="bad">✗</td></tr>
+</table>
+
+<h3>结果结构</h3>
+<pre><span class="c">// 一集一个 segment；正文 = lines.join('\n')</span>
+segment = {
+  ep, epNo,                <span class="c">// 第几集 / 从集名解析出的集号</span>
+  name,                    <span class="c">// 集名（取表格 R1 集信息行）</span>
+  column: <span class="g">'台词'</span>,           <span class="c">// 来源列名 —— 只作元数据，不混进正文</span>
+  wukong: <span class="g">true</span>,             <span class="c">// 标记来自悟空规则</span>
+  source, lineRange,       <span class="c">// 溯源：表N R起~R止</span>
+  lineCount, lines: [...]  <span class="c">// 台词栏逐行</span>
+}</pre>
+
+<div class="note">
+  <b>两条归一化决策。</b>样张是人工粘贴产物、带手工痕迹，所以不逐字复刻：<br>
+  ① 列名「台词」<b>不进正文</b> —— 样张把它写进了正文（81 集独立成行、82–84 集缀在集名后），
+  但提词器会把「台词」两个字念出来；<br>
+  ② 空行按「折叠连续 + 去尾留首」规范化，不拟合样张的随手空行。
+</div>
+
+<h2>三、接入方式：第四种拆分方式</h2>
+
+<table>
+  <tr><th>位置</th><th>改动</th></tr>
+  <tr><td><code>miniprogram/utils/util.js</code></td>
+      <td>新增 <code>splitTableScriptWukong(tables, headings)</code>；<code>splitScripts(blocks, opts)</code> 支持 <code>opts.mode === 'wukong'</code>；抽出共用内核 <code>locateTableStructure</code>；新增行级占位判定 <code>isPlaceholderLine</code></td></tr>
+  <tr><td><code>pages/preview/preview.wxml</code></td>
+      <td>在现有三个按钮的 <code>.bar</code> <b>下方</b>新增 <code>.bar-sub</code> 一行按钮「悟空脚本专属拆分（N 集）」；未检出脚本表时置灰并提示</td></tr>
+  <tr><td><code>pages/preview/preview.js</code></td>
+      <td><code>wukongSegmentsOf()</code> + <code>onImportWukong()</code>；落盘复用 <code>importSave.commitSplitFromSegments</code>（单一事实来源，不另写一套）</td></tr>
+  <tr><td><code>pages/index/index.js</code></td>
+      <td>解析 docx 时同时算两份：<code>result</code>（多模态）与 <code>wukong</code>，一起放进 <code>importPayload</code></td></tr>
+</table>
+
+<h2>四、与「智能多模态拆分」的关系：同一内核，只在清洗上分叉</h2>
+
+<p>抽出 <code>locateTableStructure(rows, headingBefore)</code> 作为<b>共用内核</b>：表头行定位、台词列 / 角色列映射、
+集标题解析、数据行区间（含「表头前的台词行被救回」）。两种拆分都调它 —— <b>结构识别永远一致</b>，
+行为分叉只剩一处：</p>
+
+<table>
+  <tr><th>维度</th><th>悟空脚本专属拆分</th><th>智能多模态拆分</th></tr>
+  <tr><td>结构定位</td><td colspan="2" style="text-align:center;background:#f7fbf9">同一函数 <code>locateTableStructure</code> —— 集数 / 集名 / 行区间 / 列映射完全一致</td></tr>
+  <tr><td>占位行（（无台词）/—）</td><td class="ok">原样保留</td><td>过滤</td></tr>
+  <tr><td>空行</td><td>保留（折叠连续、去尾留首）</td><td>丢弃</td></tr>
+  <tr><td>说话人拆分</td><td>只按软换行 / 段落拆</td><td>额外按「名字：」拆行</td></tr>
+  <tr><td>真实稿件实测</td><td><b>238 行</b></td><td><b>228 行</b></td></tr>
+</table>
+
+<div class="note">
+  口径由宝哥拍板为「<b>内核同源 + 各自微调</b>」：多模态保持清洗（提词器更干净），
+  悟空专属严格复刻「复制」语义。两个按钮对同一份表格稿的<b>结构与顺序完全一致</b>，
+  差异只在占位行与空行这 10 行。
+</div>
+
+<h2>五、原始文档验证</h2>
+
+<p>新增可复跑脚本 <code>verify_wukong_sample.js</code>：源稿 → 悟空拆分 → 与人工样张逐集逐行比。</p>
+
+<table>
+  <tr><th>集</th><th>集名</th><th>悟空 / 样张</th><th>结果</th></tr>
+  <tr><td>第1集</td><td>建华&amp;小凤的生活81</td><td>28 / 28</td><td class="ok">逐行完全一致 ✅</td></tr>
+  <tr><td>第2集</td><td>建华&amp;小凤的生活82</td><td>28 / 28</td><td class="ok">逐行完全一致 ✅</td></tr>
+  <tr><td>第3集</td><td>建华&amp;小凤的生活83</td><td>26 / 26</td><td class="ok">逐行完全一致 ✅</td></tr>
+  <tr><td>第4集</td><td>建华&amp;小凤的生活84</td><td>21 / 21</td><td class="ok">逐行完全一致 ✅</td></tr>
+  <tr><td>第5集</td><td>建华&amp;小凤的生活85</td><td>10 / 10</td><td class="ok">逐行完全一致 ✅</td></tr>
+  <tr><td>第6集</td><td>建华&amp;小凤的生活86</td><td>39 / 39</td><td class="ok">逐行完全一致 ✅</td></tr>
+  <tr><td>第7集</td><td>建华&amp;小凤的生活87</td><td>32 / 30</td><td>非空台词行一致 ✅（仅空行排版有别）</td></tr>
+  <tr><td>第8集</td><td>建华&amp;小凤的生活88</td><td>19 / 19</td><td class="ok">逐行完全一致 ✅</td></tr>
+  <tr><td>第9集</td><td>建华&amp;小凤的生活89</td><td>28 / 29</td><td>非空台词行一致 ✅（仅空行排版有别）</td></tr>
+  <tr><td>第10集</td><td>建华&amp;小凤的生活90</td><td>7 / 7</td><td class="ok">逐行完全一致 ✅</td></tr>
+</table>
+
+<p><b>汇总：10 集 ｜ 逐行完全一致 8 集 ｜ 非空台词行一致 10 集。</b>
+两集（87、89）的差异<b>全部是空行数量</b> —— 手工粘贴的空行分布无从机械复刻，也不该复刻。</p>
+
+<h2>六、随机模糊测试抓出一个真缺陷</h2>
+
+<p>新增 <code>fuzz_wukong.js</code>：随机表格稿（列数 3~5 随机、台词列位置随机、列名六选一、分隔方式混用、
+内容带全局唯一编号 T/S/N 前缀，便于字符级抓「串列」与「丢字」），8 条不变量 ——
+IW1 集数守恒 · IW2 非空行零丢失且顺序一致 · IW3 字段纯净（画面/备注不串列）· IW4 摘要行不入结果 ·
+IW5 占位行保留 · IW6 空行策略 · IW7 集名正确 · IW8 双模式同源。</p>
+
+<div class="card">
+  <h3 style="margin-top:0">缺陷：占位行「连坐」吃掉同格台词 <span class="pill w">零遗漏红线</span></h3>
+<pre><span class="c">一格内容 =</span> <span class="g">甲：第一句。\n（无对白）\n乙：第二句。</span>
+
+修复前（整格过滤）  <span class="r">→ 整格被丢弃，同格 3 句台词一起消失</span>
+修复后（逐行过滤）  <span class="g">→ 只丢「（无对白）」一行，甲乙两句都保留 ✅</span></pre>
+  <p style="margin-bottom:0"><b>根因：</b>占位行过滤拿<b>整格文本</b>去 <code>test()</code> ——
+  <code>if (/（无台词）/.test(t2)) return</code>，一格里只要出现一行占位行，同格其他台词连坐消失。</p>
+  <p style="margin-bottom:0"><b>修法：</b>改成<b>逐行</b>过滤，新增 <code>isPlaceholderLine(s)</code>
+  （认「（无台词）」「（无对白）」「无台词」「—」「-」「·」，<b>不认</b>「（无台词，手机屏幕微微照亮她的脸）」
+  这类带说明的）；有表头路径与 legacy 路径一起改。</p>
+</div>
+
+<div class="note">
+  <b>真实稿件 228 行未变</b> —— 这份稿没踩到该边界（它的占位行都独占一格）。
+  也就是说：<b>这个缺陷不会在宝哥当前的稿件上暴露，但边界写法必须对</b>，而随机测试把它抓了出来。
+</div>
+
+<h2>七、验证矩阵</h2>
+
+<table>
+  <tr><th>项</th><th>规模</th><th>结果</th></tr>
+  <tr><td>全量回归</td><td>35 套件</td><td class="ok">0 失败</td></tr>
+  <tr><td>悟空 × 多模态 模糊测试</td><td>3500 篇（1000×6 / 500×3 / 500×10 / 500×15 / 300×25 / 300×40 / 200×8 / 200×12）</td><td class="ok">112,376 断言 / 0 类失败</td></tr>
+  <tr><td>round31 专项回归</td><td>42 项（含 mock 微信环境真跑页面 onLoad / onImportWukong / 落盘）</td><td class="ok">42 / 42</td></tr>
+  <tr><td>多人同格专项（上一轮）</td><td>逐格 332 断言 + 边界 25 条</td><td class="ok">332/0 · 25/25 未退化</td></tr>
+  <tr><td>真实文档对账</td><td>10 集</td><td class="ok">非空台词行 100% 一致</td></tr>
+</table>
+
+<h2>八、两个坑（勿重犯）</h2>
+
+<ol>
+  <li><b>zsh 不对未加引号的参数做分词。</b><code>set -- ${cfg}</code> 会把整串 <code>"1000 6 2026"</code>
+      当成<b>一个</b>位置参数 → <code>$1</code> 是整串、<code>$2/$3</code> 空 → 脚本静默跑 0 次
+      （表现为「断言次数：0 耗时 0ms」，极具迷惑性）。要么 <code>set -- ${=cfg}</code>，要么用函数收参。
+      叠加老坑「变量后紧跟中文会被当作变量名的一部分」：<code>printf "[$1篇×$2行]"</code> 同样是错的，必须写 <code>${1}</code>。</li>
+  <li><b>诊断脚本的判定自己也会长出缺陷。</b>本轮 fuzz 首跑报的 4 类失败里 3 类是判定错
+      （<code>isPlaceholderLine</code> 把<b>空行</b>也当占位行；IW2 拿「含占位行的结果」去比「不含占位行的源」）。
+      <b>先怀疑判定、再怀疑产品</b> —— 但不能就此收手，剩下那 1 类正是真缺陷。</li>
+</ol>
+
+<h2>九、交付清单</h2>
+
+<table>
+  <tr><th>文件</th><th>说明</th></tr>
+  <tr><td><code>miniprogram/utils/util.js</code></td><td>悟空规则 + 共用内核 <code>locateTableStructure</code> + <code>isPlaceholderLine</code>（占位行不连坐修复）</td></tr>
+  <tr><td><code>miniprogram/pages/preview/preview.wxml|wxss|js</code></td><td>第四个按钮 + 样式 + <code>onImportWukong</code></td></tr>
+  <tr><td><code>miniprogram/pages/index/index.js</code></td><td><code>importPayload</code> 补带悟空拆分结果</td></tr>
+  <tr><td><code>round31.test.js</code></td><td>42 项专项回归（复制规则 / 内容策略 / 数据行区间 / 内核同源 / 页面接入 / 占位行不连坐）</td></tr>
+  <tr><td><code>fuzz_wukong.js</code></td><td>随机台词语料模糊测试台（8 条不变量，两种拆分链各跑一遍）</td></tr>
+  <tr><td><code>verify_wukong_sample.js</code></td><td>真实稿件对账脚本（可复跑）</td></tr>
+  <tr><td><code>CONTEXT.md</code> 第二十九节</td><td>机制定义 + 实现 + 验证 + 坑 的项目知识库记录</td></tr>
+</table>
+
+<div class="foot">
+  宝哥的提词器 · 悟空脚本专属拆分机制与验证报告 · 2026-09-19<br>
+  源稿 建华&amp;小凤的生活81-90.docx 一字未动（MD5 <code>a390285d0de36da2da5fae94f1f8f7a2</code>），改动全在小程序侧。
+</div>
+
+</div>
+</body>
+</html>

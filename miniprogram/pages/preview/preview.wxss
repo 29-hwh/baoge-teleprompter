@@ -1,0 +1,174 @@
+.prev {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #111111;
+  color: #eeeeee;
+  box-sizing: border-box;
+}
+
+/* 顶部固定操作栏：作为 flex 兄弟节点，始终停留在顶部，不随下方滚动消失 */
+.topbar {
+  flex: none;
+  background: #000000;
+  border-bottom: 1rpx solid #333333;
+  padding-bottom: 12rpx;
+}
+
+.topbar-head {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 12rpx 24rpx;
+}
+
+.cancel-btn {
+  flex: none;
+  font-size: 24rpx;
+  line-height: 1.4;
+  padding: 8rpx 20rpx;
+  margin: 0;
+  background: #2a2a2e;
+  color: #e8eaed;
+  border-radius: 10rpx;
+}
+
+.cancel-btn::after {
+  border: none;
+}
+
+.topbar-meta {
+  flex: 1;
+  font-size: 24rpx;
+  color: #9aa0a6;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 三个导入按钮：始终在顶部一行 */
+.bar {
+  display: flex;
+  gap: 12rpx;
+  padding: 0 16rpx;
+}
+
+/* 第四种拆分方式单独一行，落在三个按钮下方 */
+.bar-sub {
+  margin-top: 12rpx;
+}
+
+.btn.wukong {
+  background: #3f8c74;
+  color: #ffffff;
+}
+
+.wukong-hint {
+  padding: 8rpx 24rpx 0;
+  font-size: 20rpx;
+  color: #9aa0a6;
+}
+
+.btn {
+  flex: 1;
+  min-width: 0;
+  font-size: 22rpx;
+  line-height: 1.3;
+  border-radius: 12rpx;
+  padding: 16rpx 8rpx;
+  margin: 0;
+  background: #2a2a2e;
+  color: #ffffff;
+  white-space: normal;
+}
+
+.btn.primary {
+  background: #ff6b6b;
+  color: #ffffff;
+}
+
+.btn[disabled] {
+  opacity: 0.4;
+}
+
+.btn::after {
+  border: none;
+}
+
+.body {
+  flex: 1;
+  padding: 24rpx 32rpx;
+  box-sizing: border-box;
+}
+
+/* 分集预览（置顶） */
+.seg-title {
+  margin: 8rpx 0 12rpx;
+  font-size: 26rpx;
+  color: #9aa0a6;
+}
+
+.seg-card {
+  background: #1c1c1e;
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.seg-name {
+  font-size: 28rpx;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.seg-sub {
+  font-size: 22rpx;
+  color: #9aa0a6;
+  margin-top: 4rpx;
+}
+
+.seg-prev {
+  font-size: 24rpx;
+  color: #c9cdd4;
+  margin-top: 8rpx;
+  line-height: 1.6;
+}
+
+/* 原文（置底） */
+.src-title {
+  margin: 32rpx 0 12rpx;
+  font-size: 26rpx;
+  color: #9aa0a6;
+}
+
+.doc-text {
+  font-size: 30rpx;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #e8eaed;
+}
+
+.bottom-pad {
+  height: 20rpx;
+}
+.line-text {
+  font-size: 28rpx;
+  color: #e8eaed;
+  margin-top: 4rpx;
+  line-height: 1.6;
+}
+.line-scene {
+  font-size: 26rpx;
+  color: #aacbff;
+}
+.line-choice {
+  font-size: 24rpx;
+  color: #d6a8ef;
+  line-height: 1.6;
+}
+.line-narr {
+  font-size: 26rpx;
+  color: #c9cdd4;
+  line-height: 1.6;
+}

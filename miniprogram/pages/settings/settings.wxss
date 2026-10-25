@@ -1,0 +1,214 @@
+/* iOS 分组列表风格 */
+.group-title {
+  font-size: 24rpx;
+  font-weight: 600;
+  letter-spacing: 1rpx;
+  color: var(--text-tertiary);
+  margin: 32rpx 8rpx 14rpx;
+}
+
+.group-card {
+  background: var(--bg-card);
+  border-radius: 20rpx;
+  overflow: hidden;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 26rpx 28rpx;
+}
+
+.line.sub-line {
+  padding-bottom: 14rpx;
+}
+
+.line-label {
+  font-size: 30rpx;
+  color: var(--text);
+}
+
+.line-value {
+  font-size: 28rpx;
+  color: var(--text-tertiary);
+}
+
+.line-sep {
+  height: 1rpx;
+  background: var(--border);
+  margin-left: 28rpx;
+}
+
+.tiny {
+  color: var(--text-tertiary);
+  font-size: 24rpx;
+  padding: 0 28rpx 24rpx;
+  line-height: 1.4;
+}
+
+/* 左右留白滑块：给一点左右内距，避免贴着卡片边 */
+.margin-slider {
+  margin: 4rpx 24rpx 0;
+}
+
+/* 一键主题预设卡片 */
+.preset-row {
+  display: flex;
+  padding: 8rpx 28rpx 28rpx;
+}
+
+.preset-card {
+  flex: 1;
+  margin-right: 18rpx;
+  border-radius: 14rpx;
+  overflow: hidden;
+  border: 3rpx solid transparent;
+}
+
+.preset-card:last-child {
+  margin-right: 0;
+}
+
+.preset-card.on {
+  border-color: var(--accent);
+}
+
+.preset-preview {
+  height: 110rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12rpx 12rpx 0 0;
+}
+
+.preset-sample {
+  font-size: 44rpx;
+  font-weight: 600;
+}
+
+.preset-name {
+  display: block;
+  text-align: center;
+  font-size: 21rpx;
+  color: var(--text-secondary);
+  padding: 12rpx 4rpx;
+  background: var(--bg-elevated);
+}
+
+/* 颜色样本 */
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 4rpx 24rpx 28rpx;
+}
+
+.swatch {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  margin: 0 16rpx 16rpx 0;
+  border: 3rpx solid var(--border);
+  box-sizing: border-box;
+}
+
+.swatch.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4rpx rgba(10, 132, 255, 0.3);
+}
+
+/* iOS 分段控件 */
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 4rpx 28rpx 24rpx;
+}
+
+.seg-item {
+  padding: 14rpx 28rpx;
+  margin: 0 14rpx 14rpx 0;
+  border-radius: 10rpx;
+  font-size: 27rpx;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+}
+
+.seg-item.on {
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.step-row {
+  display: flex;
+  padding: 0 28rpx 8rpx;
+}
+
+.step-btn {
+  flex: 1;
+  margin-right: 16rpx;
+  padding: 14rpx 0;
+  border-radius: 10rpx;
+  background: var(--bg-elevated);
+  font-size: 26rpx;
+  text-align: center;
+  color: var(--text);
+}
+
+.step-btn:last-child {
+  margin-right: 0;
+}
+
+/* 开关行 */
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22rpx 28rpx;
+}
+
+.switch-text {
+  flex: 1;
+  margin-right: 24rpx;
+}
+
+.switch-title {
+  font-size: 30rpx;
+  color: var(--text);
+  margin-bottom: 4rpx;
+}
+
+.switch {
+  width: 92rpx;
+  height: 52rpx;
+  border-radius: 999rpx;
+  background: rgba(120, 120, 128, 0.32);
+  position: relative;
+  flex-shrink: 0;
+  transition: background 200ms;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 4rpx;
+  left: 4rpx;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2rpx 4rpx rgba(0, 0, 0, 0.2);
+  transition: transform 200ms;
+}
+
+.switch.on {
+  background: #34C759;
+}
+
+.switch.on::after {
+  transform: translateX(40rpx);
+}
+
+.safe-bottom {
+  height: calc(20rpx + env(safe-area-inset-bottom));
+}

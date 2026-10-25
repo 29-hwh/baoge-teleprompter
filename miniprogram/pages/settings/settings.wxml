@@ -1,0 +1,285 @@
+<view class="container">
+
+  <!-- 外观 -->
+  <view class="group-title">外观</view>
+  <view class="group-card">
+    <view class="line">
+      <view class="line-label">外观主题</view>
+    </view>
+    <view class="preset-row">
+      <view
+        wx:for="{{presets}}"
+        wx:key="key"
+        class="preset-card {{prefs.colorScheme === item.key && !prefs.bgColor ? 'on' : ''}}"
+        data-value="{{item.key}}"
+        bindtap="onTapPreset"
+      >
+        <view class="preset-preview" style="background: {{item.bg}};">
+          <text class="preset-sample" style="color: {{item.text}};">Aa</text>
+        </view>
+        <text class="preset-name">{{item.name}}</text>
+      </view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="line">
+      <view class="line-label">背景颜色</view>
+    </view>
+    <view class="swatch-row">
+      <view
+        wx:for="{{bgSwatches}}"
+        wx:key="*this"
+        class="swatch {{prefs.colorScheme === 'custom' && prefs.bgColor === item ? 'on' : ''}}"
+        style="background: {{item}};"
+        data-value="{{item}}"
+        bindtap="onTapBgColor"
+      ></view>
+    </view>
+
+    <view class="line" style="margin-top:20rpx">
+      <view class="line-label">文字颜色</view>
+    </view>
+    <view class="swatch-row">
+      <view
+        wx:for="{{textSwatches}}"
+        wx:key="*this"
+        class="swatch {{prefs.colorScheme === 'custom' && prefs.textColor === item ? 'on' : ''}}"
+        style="background: {{item}};"
+        data-value="{{item}}"
+        bindtap="onTapTextColor"
+      ></view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="line">
+      <view class="line-label">字体</view>
+    </view>
+    <view class="seg">
+      <view
+        wx:for="{{fontFamilyKeys}}"
+        wx:key="*this"
+        class="seg-item {{prefs.fontFamily === item ? 'on' : ''}}"
+        data-value="{{item}}"
+        bindtap="onTapFontFamily"
+      >{{fontFamilies[item].label}}</view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="line">
+      <view class="line-label">字号</view>
+    </view>
+    <view class="seg">
+      <view
+        wx:for="{{fontLevels}}"
+        wx:key="*this"
+        class="seg-item {{prefs.fontSize === item ? 'on' : ''}}"
+        data-value="{{item}}"
+        bindtap="onTapFont"
+      >{{fontLabels[index]}}</view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="line">
+      <view class="line-label">左右留白</view>
+      <view class="line-value">{{prefs.marginHorizontal}}px</view>
+    </view>
+    <slider
+      class="margin-slider"
+      min="0"
+      max="80"
+      step="4"
+      value="{{prefs.marginHorizontal}}"
+      activeColor="#FFD166"
+      backgroundColor="rgba(255,255,255,0.2)"
+      block-size="20"
+      block-color="#FFD166"
+      bindchanging="onSlideMargin"
+      bindchange="onSlideMargin"
+    />
+    <view class="tiny">文字与屏幕左右边缘的间距，竖屏可调小让台词更宽更满；0 即贴边</view>
+  </view>
+
+  <!-- 滚动 -->
+  <view class="group-title">滚动</view>
+  <view class="group-card">
+    <view class="line">
+      <view class="line-label">语速（字/分钟）</view>
+      <view class="line-value">{{prefs.speed}}</view>
+    </view>
+    <view class="seg">
+      <view
+        wx:for="{{speedPresets}}"
+        wx:key="value"
+        class="seg-item {{prefs.speed === item.value ? 'on' : ''}}"
+        data-value="{{item.value}}"
+        bindtap="onTapSpeedPreset"
+      >{{item.label}}</view>
+    </view>
+    <view class="row step-row">
+      <view class="step-btn" data-delta="-20" bindtap="onTapSpeedStep">−20</view>
+      <view class="step-btn" data-delta="20" bindtap="onTapSpeedStep">+20</view>
+    </view>
+    <view class="tiny">极慢 50（默认，约 2 秒一行）｜知识讲解 100-140｜口播 180-220｜带货 240</view>
+
+    <view class="line-sep"></view>
+
+    <view class="line">
+      <view class="line-label">行距</view>
+    </view>
+    <view class="seg">
+      <view
+        wx:for="{{lineHeightOptions}}"
+        wx:key="*this"
+        class="seg-item {{prefs.lineHeight === item ? 'on' : ''}}"
+        data-value="{{item}}"
+        bindtap="onTapLineHeight"
+      >{{item}}</view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="line">
+      <view class="line-label">字间距</view>
+    </view>
+    <view class="seg">
+      <view
+        wx:for="{{letterSpacingOptions}}"
+        wx:key="*this"
+        class="seg-item {{prefs.letterSpacing === item ? 'on' : ''}}"
+        data-value="{{item}}"
+        bindtap="onTapLetterSpacing"
+      >{{item}}</view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="line">
+      <view class="line-label">开场倒计时（秒）</view>
+    </view>
+    <view class="seg">
+      <view
+        wx:for="{{countdownOptions}}"
+        wx:key="*this"
+        class="seg-item {{prefs.countdown === item ? 'on' : ''}}"
+        data-value="{{item}}"
+        bindtap="onTapCountdown"
+      >{{item === 0 ? '关闭' : item}}</view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="line">
+      <view class="line-label">横竖屏</view>
+    </view>
+    <view class="seg">
+      <view
+        wx:for="{{orientationOptions}}"
+        wx:key="value"
+        class="seg-item {{prefs.orientation === item.value ? 'on' : ''}}"
+        data-value="{{item.value}}"
+        bindtap="onTapOrientation"
+      >{{item.label}}</view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="line">
+      <view class="line-label">滚动方式</view>
+    </view>
+    <view class="seg">
+      <view
+        wx:for="{{scrollModeOptions}}"
+        wx:key="value"
+        class="seg-item {{prefs.scrollMode === item.value ? 'on' : ''}}"
+        data-value="{{item.value}}"
+        bindtap="onTapScrollMode"
+      >{{item.label}}</view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="switch-row" data-key="loop" bindtap="onToggle">
+      <view class="switch-text">
+        <view class="switch-title">无缝无限滚动</view>
+        <view class="tiny">台词匀速滚动，读完自动接回开头，永不停（默认开启；关闭则滚到底暂停）</view>
+      </view>
+      <view class="switch {{prefs.loop ? 'on' : ''}}"></view>
+    </view>
+  </view>
+
+  <!-- 高亮与辅助 -->
+  <view class="group-title">高亮与辅助</view>
+  <view class="group-card">
+    <!-- 一键关闭智能功能（漏词兜底）：智能功能总闸——开启后角色过滤与角色高亮全部停用，
+         任何情况下台词都 100% 完整显示。与编辑页「角色显示选择」里的同名开关同源（prefs.smartOff）。 -->
+    <view class="switch-row" data-key="smartOff" bindtap="onToggle">
+      <view class="switch-text">
+        <view class="switch-title">一键关闭智能功能</view>
+        <view class="tiny">停用角色过滤与角色高亮，台词 100% 完整显示（漏词时的兜底开关）</view>
+      </view>
+      <view class="switch {{prefs.smartOff ? 'on' : ''}}"></view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="switch-row" data-key="roleHighlight" bindtap="onToggle">
+      <view class="switch-text">
+        <view class="switch-title">角色多色高亮</view>
+        <view class="tiny">写成「角色名：台词」自动识别并分色</view>
+      </view>
+      <view class="switch {{prefs.roleHighlight ? 'on' : ''}}"></view>
+    </view>
+
+    <!-- 「高亮方式（名字高亮 / 名字+台词高亮）」已从本页下移到编辑页「角色显示选择」面板内，
+         与台词选择放在同一处，不再占用显示设置的版面（设置项本身仍是同一个 prefs.roleHighlightMode）。 -->
+
+    <view class="line-sep"></view>
+
+    <view class="switch-row" data-key="mirror" bindtap="onToggle">
+      <view class="switch-text">
+        <view class="switch-title">镜像翻转</view>
+        <view class="tiny">分光镜拍摄时必须开，后置镜头拍摄请关</view>
+      </view>
+      <view class="switch {{prefs.mirror ? 'on' : ''}}"></view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="switch-row" data-key="showGuide" bindtap="onToggle">
+      <view class="switch-text">
+        <view class="switch-title">视线参考线</view>
+        <view class="tiny">视线对准参考线，观众看不出你在读稿</view>
+      </view>
+      <view class="switch {{prefs.showGuide ? 'on' : ''}}"></view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="switch-row" data-key="keepScreenOn" bindtap="onToggle">
+      <view class="switch-text">
+        <view class="switch-title">屏幕常亮</view>
+        <view class="tiny">提词过程中防止自动息屏</view>
+      </view>
+      <view class="switch {{prefs.keepScreenOn ? 'on' : ''}}"></view>
+    </view>
+
+    <view class="line-sep"></view>
+
+    <view class="switch-row" data-key="fillLight" bindtap="onToggle">
+      <view class="switch-text">
+        <view class="switch-title">画面补光灯</view>
+        <view class="tiny">把屏幕亮度拉满，给面部补光</view>
+      </view>
+      <view class="switch {{prefs.fillLight ? 'on' : ''}}"></view>
+    </view>
+  </view>
+
+  <!-- 引导只看一次，忘了就没处再看 —— 这里给一个重新查看的入口 -->
+  <view class="btn btn-block" style="margin-bottom:20rpx" bindtap="onTapReplayGuide">重新查看新手引导</view>
+  <view class="btn btn-danger btn-block" bindtap="onTapReset">恢复默认设置</view>
+  <view class="safe-bottom"></view>
+</view>

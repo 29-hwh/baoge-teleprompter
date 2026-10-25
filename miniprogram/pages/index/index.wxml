@@ -1,0 +1,111 @@
+<view class="container">
+  <view class="row-between header">
+    <view>
+      <view class="page-title">我的台本</view>
+      <view class="tiny">台本不限条数，长按可删除</view>
+    </view>
+    <view class="icon-btn" bindtap="onTapSettings">设置</view>
+  </view>
+
+  <!-- 主操作区：新建 / 导入 常驻页面顶部，滚动时吸顶，随时可取 -->
+  <view class="action-bar">
+    <view class="btn btn-primary btn-block" bindtap="onTapNew">新建台本</view>
+    <view class="btn btn-block btn-import" bindtap="onTapImport">导入 txt / word</view>
+  </view>
+
+  <!-- 分区切换：全部 / 拆分台本(Word 拆分导入归入文件夹) / 单篇台本 -->
+  <view class="filter-bar">
+    <view class="filter-tab {{filter === 'all' ? 'on' : ''}}" data-key="all" bindtap="onSwitchFilter">全部</view>
+    <view class="filter-tab {{filter === 'split' ? 'on' : ''}}" data-key="split" bindtap="onSwitchFilter">拆分台本{{splitCount ? ' ' + splitCount : ''}}</view>
+    <view class="filter-tab {{filter === 'single' ? 'on' : ''}}" data-key="single" bindtap="onSwitchFilter">单篇{{singleCount ? ' ' + singleCount : ''}}</view>
+  </view>
+
+  <view wx:if="{{storageTip}}" class="tip-bar">{{storageTip}}</view>
+
+  <view wx:if="{{empty}}" class="empty">
+    <view class="empty-title">还没有台本</view>
+    <view class="tiny">粘贴一段文字，或从聊天记录导入 txt / word</view>
+  </view>
+
+  <!-- 文件夹标题卡：点一下改名，长按删除整组（含组内台本） -->
+  <block wx:for="{{list}}" wx:key="id" wx:for-item="item">
+    <view
+      wx:if="{{item.kind === 'folder'}}"
+      class="folder-head {{item.collapsed ? 'is-collapsed' : ''}}"
+      data-fid="{{item.fid}}"
+      data-name="{{item.name}}"
+      data-count="{{item.count}}"
+      bindtap="onTapFolder"
+      bindlongpress="onLongPressFolder"
+      hover-class="btn-hover"
+    >
+      <view class="row-between">
+        <view class="folder-title">📁 {{item.name}}</view>
+        <view class="row folder-right">
+          <text class="folder-count">{{item.count}} 篇</text>
+          <view class="folder-arrow" catchtap="onToggleFolder" data-fid="{{item.fid}}">{{item.collapsed ? '▸' : '▾'}}</view>
+        </view>
+      </view>
+      <view class="row-between script-meta folder-meta">
+        <text class="tiny">{{item.collapsed ? '已收起 · 点箭头展开' : '点按改名 · 长按删除整组'}}</text>
+        <text class="tiny">{{item.updatedText}}</text>
+      </view>
+    </view>
+
+    <!-- 台本卡（文件夹内的与独立的都走这里） -->
+    <view
+      wx:if="{{item.kind === 'script'}}"
+      class="card script-item {{item.inFolder ? 'in-folder' : ''}}"
+      data-id="{{item.id}}"
+      data-title="{{item.title}}"
+      bindtap="onTapItem"
+      bindlongpress="onLongPress"
+      hover-class="btn-hover"
+    >
+      <view class="row-between">
+        <view class="script-title">{{item.title}}</view>
+        <view wx:if="{{item.roleCount > 0}}" class="badge role-badge">{{item.roleCount}} 角色</view>
+      </view>
+      <view class="script-preview">{{item.preview || '（空白台本）'}}</view>
+      <view class="row-between script-meta">
+        <text class="tiny">{{item.chars}} 字</text>
+        <text class="tiny">{{item.updatedText}}</text>
+      </view>
+    </view>
+  </block>
+
+  <!-- 文件夹重命名弹窗 -->
+  <view wx:if="{{folderRenameVisible}}" class="rename-mask" bindtap="onFolderRenameCancel">
+    <view class="rename-card" catchtap="noop">
+      <view class="rename-title">文件夹命名</view>
+      <input
+        class="rename-input"
+        placeholder-class="ed-ph"
+        value="{{folderRenameName}}"
+        maxlength="30"
+        placeholder="给文件夹起个名字"
+        focus="{{true}}"
+        bindinput="onFolderNameInput"
+        bindconfirm="onFolderRenameOk"
+      />
+      <view class="row-between rename-btns">
+        <view class="btn btn-ghost rename-btn" bindtap="onFolderRenameCancel">取消</view>
+        <view class="btn btn-primary rename-btn" bindtap="onFolderRenameOk">确定</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 页脚：固定显示应用版本号，并附版权与更新日期（信息完整、不遮挡内容） -->
+  <view class="app-footer">
+    <view class="footer-main">
+      <text class="footer-ver">{{version}}</text>
+      <text class="footer-sep">·</text>
+      <text class="footer-tag">免费 · 台本不限条数</text>
+    </view>
+    <view class="footer-sub">
+      <text>{{footerCopyright}}</text>
+      <text class="footer-dot">·</text>
+      <text>{{footerUpdate}}</text>
+    </view>
+  </view>
+</view>

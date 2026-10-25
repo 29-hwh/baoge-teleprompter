@@ -1,0 +1,241 @@
+<view class="page" style="padding-top: {{navHeight}}px">
+  <!-- 自定义返回栏：原生返回无法拦截，这里用自定义按钮在退出时确认是否保存 -->
+  <view class="ed-nav" style="padding-top: {{statusBarHeight}}px">
+    <view class="ed-nav-inner">
+      <view class="ed-nav-back" bindtap="onTapBack">
+        <text class="ed-nav-back-ico">‹</text>
+        <text>返回</text>
+      </view>
+      <text class="ed-nav-title">{{navTitle}}</text>
+    </view>
+  </view>
+  <view class="container">
+  <view class="card">
+    <!--
+      台本标题输入：由 input 改为 textarea + auto-height，长标题自动换行、完整显示。
+      根因：input 是「单行」原生组件，超出框宽即硬裁切（既无省略号、也不可换行），
+      30 字标题在窄屏（可用宽仅约 574rpx）下尾部直接被切掉 → 「标题显示不全」。
+      改用 textarea 后按内容自动增高、自动折行，任意长度标题都完整可见可编辑。
+      数据来源与编辑逻辑完全不变：value / bindinput / bindfocus / maxlength 均保持原样。
+    -->
+    <textarea
+      class="ed-title-input"
+      placeholder-class="ed-title-ph"
+      placeholder="台本标题"
+      maxlength="30"
+      value="{{title}}"
+      cursor-spacing="120"
+      auto-height="{{true}}"
+      show-confirm-bar="{{false}}"
+      bindfocus="onTitleFocus"
+      bindinput="onInputTitle"
+    />
+  </view>
+
+  <view class="card">
+    <view class="row-between card-title">
+      <text>台本内容</text>
+      <view class="row">
+        <text class="link-btn danger" bindtap="onTapClear">清空</text>
+      </view>
+    </view>
+    <textarea
+      class="textarea ed-body-text"
+      placeholder-class="ed-body-ph"
+      placeholder="粘贴台词，角色名会自动识别并配色：&#10;林晚：你真的要走了吗&#10;顾辞：公司调我去深圳"
+      maxlength="-1"
+      value="{{content}}"
+      bindinput="onInputContent"
+      show-confirm-bar="{{false}}"
+      auto-height="{{false}}"
+    ></textarea>
+    <view class="row-between stat-bar">
+      <text class="tiny">{{stats.chars}} 字 · {{stats.sentences}} 句 · {{stats.sections}} 段</text>
+      <text class="tiny">{{minutesText}}</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="row-between card-title">
+      <text>角色高亮（识别到 {{stats.roleCount}} 个）</text>
+      <text class="link-btn" bindtap="onTapAddRole">手动添加</text>
+    </view>
+
+    <view class="tiny">写成「角色名：台词」或「【角色名】台词」自动识别并分色。点角色上的 × 可删掉误判。</view>
+
+    <view wx:if="{{roles.length > 0}}" class="role-list">
+      <view class="role-chip" wx:for="{{roles}}" wx:key="name">
+        <view class="role-dot" style="background: {{item.color}}"></view>
+        <text class="role-name">{{item.name}}</text>
+        <text class="tiny role-count">{{item.count}} 句</text>
+        <text class="role-merge" data-name="{{item.name}}" catchtap="onTapMergeRole">合并</text>
+        <text class="role-del" data-name="{{item.name}}" catchtap="onTapHideRole">×</text>
+      </view>
+    </view>
+
+    <!-- 角色显示选择（需求 2/3/4/5）：次级入口，默认折叠、弱化呈现，不与主线编辑流程抢注意力。
+         展开后精简为四块：漏词风险说明 / 一键关闭智能功能 / 单项快捷操作 / 紧凑角色列表。
+         折叠行右侧常显当前状态（全文 或 仅 N 个角色），配置了过滤也不会被埋没。 -->
+    <view class="role-display-block">
+      <view class="role-display-entry" bindtap="onToggleRoleDisplayPanel" hover-class="role-display-entry-hover">
+        <text class="role-display-entry-label">角色显示选择</text>
+        <text class="role-display-entry-state">{{roleDisplaySummary}}</text>
+        <text class="role-display-entry-arrow">{{rolePanelOpen ? '▾' : '▸'}}</text>
+      </view>
+
+      <view wx:if="{{rolePanelOpen}}" class="role-display-panel">
+        <!-- 需求 4：醒目风险说明——角色过滤会让未勾选的台词不显示 -->
+        <view class="role-risk">
+          <text class="role-risk-title">⚠️ 可能漏词</text>
+          <text class="role-risk-text">开启后只显示勾选的角色，其余台词不会出现。拿不准就点下面的「一键关闭智能功能」。</text>
+        </view>
+
+        <!-- 需求 5：一键关闭智能功能（漏词兜底）——停用角色过滤与高亮，台词 100% 完整 -->
+        <view class="switch-row" bindtap="onToggleSmartOff">
+          <view class="switch-text">
+            <view class="switch-title">一键关闭智能功能</view>
+            <view class="tiny">停用角色过滤与高亮，台词 100% 完整显示</view>
+          </view>
+          <view class="switch {{smartOff ? 'on' : ''}}"></view>
+        </view>
+
+        <!-- 高亮设置：原「显示设置 → 高亮与辅助」里的「高亮方式（名字高亮 / 名字+台词高亮）」
+             已搬到这里，与台词选择放在同一处；并提供一个开关做一键关闭。
+             开关状态直接读 prefs.roleHighlight（与设置页同源，两边不会打架）。 -->
+        <view class="switch-row" bindtap="onToggleRoleHighlight">
+          <view class="switch-text">
+            <view class="switch-title">角色高亮</view>
+            <view class="tiny">一键关闭后，名字与台词都不再分色，全部用默认颜色显示</view>
+          </view>
+          <view class="switch {{roleHighlight ? 'on' : ''}}"></view>
+        </view>
+
+        <block wx:if="{{roleHighlight}}">
+          <view class="tiny role-hl-label">高亮方式</view>
+          <view class="role-display-actions">
+            <text
+              wx:for="{{roleModeOptions}}"
+              wx:key="value"
+              class="seg-btn {{highlightMode === item.value ? 'on' : ''}}"
+              data-value="{{item.value}}"
+              bindtap="onTapRoleMode"
+            >{{item.label}}</text>
+          </view>
+        </block>
+
+        <!-- 智能已关闭：不再展示过滤操作，避免「点了却不生效」的困惑（配置仍保留，关掉开关即恢复） -->
+        <view wx:if="{{smartOff}}" class="role-display-off-tip">智能功能已关闭，提词页将完整显示全部台词。</view>
+        <block wx:else>
+          <view class="role-display-actions">
+            <text class="seg-btn {{showFullText ? 'on' : ''}}" bindtap="onShowFullText">显示全文</text>
+            <text class="seg-btn {{allRoleSelected ? 'on' : ''}}" bindtap="onToggleAllRoleDisplay">{{allRoleSelected ? '取消全选' : '全选'}}</text>
+          </view>
+          <view wx:if="{{roleDisplayItems.length > 0}}" class="role-display-list">
+            <view
+              class="role-display-item {{item.selected ? 'on' : ''}}"
+              wx:for="{{roleDisplayItems}}"
+              wx:key="name"
+              data-name="{{item.name}}"
+              bindtap="onToggleRoleDisplay"
+              hover-class="role-display-item-hover"
+            >
+              <text class="role-display-check">{{item.selected ? '☑' : '☐'}}</text>
+              <text class="role-display-name">{{item.name}}</text>
+              <text class="tiny role-display-count">{{item.count}} 句</text>
+            </view>
+          </view>
+          <view wx:else class="tiny">正文里还没有识别到角色。</view>
+        </block>
+      </view>
+    </view>
+
+    <view wx:if="{{roleBlacklist.length > 0}}" class="manual-tip">
+      <text class="tiny">已排除：</text>
+      <text
+        class="manual-chip"
+        wx:for="{{roleBlacklist}}"
+        wx:key="*this"
+        data-name="{{item}}"
+        bindtap="onTapRestoreRole"
+      >{{item}} ↺</text>
+    </view>
+
+    <view wx:if="{{manualRoles.length > 0}}" class="manual-tip">
+      <text class="tiny">手动添加：</text>
+      <text
+        class="manual-chip"
+        wx:for="{{manualRoles}}"
+        wx:key="*this"
+        data-name="{{item}}"
+        bindtap="onTapRemoveRole"
+      >{{item}} ×</text>
+    </view>
+
+    <view wx:if="{{aliasRules.length > 0}}" class="manual-tip">
+      <text class="tiny">手动合并（点可拆分）：</text>
+      <text
+        class="manual-chip"
+        wx:for="{{aliasRules}}"
+        wx:key="src"
+        data-src="{{item.src}}"
+        bindtap="onTapSplitRule"
+      >{{item.src}}→{{item.tgt}} 拆</text>
+    </view>
+
+    <view wx:if="{{autoAliasRules.length > 0}}" class="manual-tip">
+      <text class="tiny">自动归并（带括号的同名已合并，点可拆开）：</text>
+      <text
+        class="manual-chip"
+        wx:for="{{autoAliasRules}}"
+        wx:key="src"
+        data-src="{{item.src}}"
+        bindtap="onTapSplitAutoRole"
+      >{{item.src}}→{{item.tgt}} 拆</text>
+    </view>
+
+    <view wx:if="{{roleTooMany}}" class="tip-bar">
+      角色超过 8 个，颜色开始循环复用，建议合并同名角色
+    </view>
+  </view>
+
+  <view class="action-bar">
+    <view class="row">
+      <view class="btn btn-ghost" style="flex:1" bindtap="onTapSave">保存</view>
+      <view class="btn btn-primary" style="flex:2;margin-left:20rpx" bindtap="onTapStart">开始提词</view>
+    </view>
+  </view>
+
+  <!-- 首次使用引导（只看一次）
+       与提词页引导同一套字号层级与三段式结构：标题固定 / 步骤可滚 / 按钮吸底 -->
+  <view wx:if="{{editGuideVisible}}" class="ed-guide-mask">
+    <view class="ed-guide-card">
+      <view class="ed-guide-head">
+        <view class="ed-guide-title">新建台本很简单</view>
+        <view class="ed-guide-sub">2 步搞定</view>
+      </view>
+      <view class="ed-guide-body">
+        <view class="ed-guide-item">
+          <text class="ed-guide-ico">✎</text>
+          <view class="ed-guide-txt"><text class="ed-guide-b">准备台词（二选一）</text><text class="ed-guide-d">直接写 / 粘贴；或从首页导入 Word、文本</text></view>
+        </view>
+        <view class="ed-guide-item">
+          <text class="ed-guide-ico">▶</text>
+          <view class="ed-guide-txt"><text class="ed-guide-b">点「开始提词」</text><text class="ed-guide-d">写成「角色：台词」，名字自动分色</text></view>
+        </view>
+      </view>
+      <view class="ed-guide-btn" bindtap="onCloseEditGuide">开始编写</view>
+    </view>
+  </view>
+
+  <!-- 退出确认弹窗：有未保存修改时三选一 -->
+  <view wx:if="{{exitModalVisible}}" class="ed-exit-mask" catchtap="onExitStay">
+    <view class="ed-exit-card" catchtap="noop">
+      <view class="ed-exit-title">还有未保存的修改</view>
+      <view class="ed-exit-sub">离开前要先保存吗？</view>
+      <view class="ed-exit-btn primary" bindtap="onExitSave">保存并返回</view>
+      <view class="ed-exit-btn ghost" bindtap="onExitStay">继续编辑</view>
+      <view class="ed-exit-btn danger" bindtap="onExitDiscard">不保存，直接离开</view>
+    </view>
+  </view>
+</view>
+</view>

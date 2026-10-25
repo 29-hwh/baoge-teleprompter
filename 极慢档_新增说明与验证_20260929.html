@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>新增「极慢」速度档 · 说明与验证（2026-09-29）</title>
+<style>
+  :root{
+    --bg:#16181d; --panel:#1e2128; --panel2:#242831; --line:#333844;
+    --tx:#e8eaed; --tx2:#a8b0bd; --tx3:#7b8496;
+    --ok:#5ecb8f; --warn:#f0b849; --bad:#ef6b6b; --accent:#6aa8f0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px 20px 64px;background:var(--bg);color:var(--tx);
+       font:15px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:940px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 6px;font-weight:600;letter-spacing:.5px}
+  .sub{color:var(--tx3);font-size:13px;margin-bottom:28px}
+  h2{font-size:18px;margin:34px 0 12px;padding-left:11px;border-left:3px solid var(--accent);font-weight:600}
+  h3{font-size:15px;margin:20px 0 8px;color:var(--tx2);font-weight:600}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:12px 0}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--tx2);font-weight:600;white-space:nowrap}
+  code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;
+       padding:1px 6px;font:13px/1.5 "SF Mono",Menlo,Consolas,monospace;color:#c9d6e8}
+  pre{background:#12141a;border:1px solid var(--line);border-radius:8px;padding:14px 16px;
+      overflow-x:auto;font:13px/1.7 "SF Mono",Menlo,Consolas,monospace;color:#c9d6e8;margin:10px 0}
+  .k{color:var(--accent)} .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  .muted{color:var(--tx3)}
+  ul{margin:8px 0;padding-left:22px} li{margin:5px 0}
+  .tag{display:inline-block;background:var(--panel2);border:1px solid var(--line);
+       border-radius:20px;padding:2px 11px;font-size:12px;color:var(--tx2);margin-right:6px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:12px 0}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .stat .n{font-size:24px;font-weight:600;color:var(--accent)}
+  .stat .l{font-size:12px;color:var(--tx3);margin-top:2px}
+  .note{border-left:3px solid var(--warn);background:rgba(240,184,73,.07);
+        padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;font-size:14px}
+  .note.blue{border-color:var(--accent);background:rgba(106,168,240,.07)}
+  .note.green{border-color:var(--ok);background:rgba(94,203,143,.07)}
+  .bar{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+  .seg{padding:5px 13px;border-radius:7px;background:var(--panel2);border:1px solid var(--line);font-size:13px}
+  .seg.on{background:var(--accent);color:#fff;font-weight:600;border-color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>新增「极慢」速度档 · 说明与验证</h1>
+  <div class="sub">baoge-teleprompter ｜ 2026-09-29 ｜ 约束：设为默认值 + 禁止自动迁移老用户</div>
+
+  <div class="grid">
+    <div class="stat"><div class="n">50</div><div class="l">「极慢」取值 = 默认值</div></div>
+    <div class="stat"><div class="n">第 1 位</div><div class="l">排序（原最慢档「慢速 110」之下）</div></div>
+    <div class="stat"><div class="n">45 / 0</div><div class="l">专项断言 通过 / 失败</div></div>
+    <div class="stat"><div class="n">38 / 0</div><div class="l">全量回归套件 通过 / 失败</div></div>
+  </div>
+
+  <h2>一、新增档位的三要素</h2>
+  <table>
+    <tr><th>项</th><th>内容</th></tr>
+    <tr><td>取值</td><td><code>50</code>（speed 档位值，非「字/分钟」；实际 <code>px/s = speed × 0.6</code> = <b>30 px/s</b>，@行高 60px 约 2 秒一行）</td></tr>
+    <tr><td>文案</td><td><code>极慢</code></td></tr>
+    <tr><td>排序</td><td>数组<b>首位</b>（value 最小），位于原最慢档「慢速 110」<b>之下</b></td></tr>
+    <tr><td>合法性</td><td><code>SPEED_MIN(40) ≤ 50 ≤ SPEED_MAX(400)</code>，滑块与 ±20 步进均可到达</td></tr>
+  </table>
+
+  <h3>设置页按钮（.seg 为 flex-wrap，第 5 档自动换行，不会挤坏布局）</h3>
+  <div class="bar">
+    <span class="seg on">极慢</span><span class="seg">慢速</span><span class="seg">稳重</span><span class="seg">标准</span><span class="seg">快节奏</span>
+  </div>
+  <div class="muted" style="font-size:13px">50 &lt; 110 &lt; 140 &lt; 200 &lt; 240　（升序，界面快慢顺序与实际一致）</div>
+
+  <h2>二、配置与选项的定义位置</h2>
+  <table>
+    <tr><th>位置</th><th>作用</th><th>本次改动</th></tr>
+    <tr>
+      <td><code>miniprogram/engine/prefs.js</code><br><span class="muted">SPEED_PRESETS</span></td>
+      <td><b>唯一来源</b>。数组顺序即按钮展示顺序</td>
+      <td>新增 <code>{ label:'极慢', value:50 }</code> 到首位</td>
+    </tr>
+    <tr>
+      <td><code>miniprogram/engine/prefs.js</code><br><span class="muted">DEFAULTS.speed</span></td>
+      <td>默认值（新用户 / 清缓存 / 恢复默认）</td>
+      <td><span class="ok">未改动（仍为 50）</span> —— 与「极慢」同值</td>
+    </tr>
+    <tr>
+      <td><code>pages/settings/settings.js:27</code></td>
+      <td>把预设挂到 <code>data.speedPresets</code></td>
+      <td>无需改动（自动带出 5 档）</td>
+    </tr>
+    <tr>
+      <td><code>pages/settings/settings.wxml</code><br><span class="muted">.seg 区块</span></td>
+      <td><code>wx:for</code> 渲染按钮，选中态 <code>prefs.speed === item.value</code></td>
+      <td>仅提示文案补入「极慢 50（默认）」</td>
+    </tr>
+    <tr>
+      <td><code>prefs.js</code> 的 <code>load()</code></td>
+      <td><b>决定老用户是否被改档的地方</b></td>
+      <td><span class="ok">未改动</span>，仅补注释锁死不变式</td>
+    </tr>
+    <tr>
+      <td><code>pages/settings/settings.js:76</code></td>
+      <td>±20 步进的兜底值</td>
+      <td><code>|| 200</code> → <code>|| prefsEngine.DEFAULTS.speed</code><br><span class="warn">（上一轮漏改的第 4 处）</span></td>
+    </tr>
+  </table>
+
+  <div class="note blue">
+    <b>加/减档位只需要改 <code>SPEED_PRESETS</code> 一个数组</b> —— 页面是 <code>wx:for</code> 渲染的，
+    不需要动 WXML。这是这次改动能保持"只加一处"的原因。
+  </div>
+
+  <h2>三、「老用户不被改档」是怎么保证的</h2>
+
+  <p>关键只有一行 —— <code>prefs.js</code> 的 <code>load()</code>：</p>
+  <pre>return normalize(Object.assign({}, DEFAULTS, saved))
+//                                    ↑ 默认   ↑ 存档在后 = 覆盖在前</pre>
+
+  <table>
+    <tr><th>用户类型</th><th>storage 状态</th><th>结果</th></tr>
+    <tr><td>新用户 / 清缓存 / 恢复默认</td><td>无存档</td><td>落到 DEFAULTS → <span class="ok">50（= 极慢）</span></td></tr>
+    <tr><td>老用户（改过任何设置）</td><td>有存档，含 speed</td><td>用<b>他自己的档位</b>，DEFAULTS 只补他没存过的字段</td></tr>
+  </table>
+
+  <div class="note green">
+    <b>项目里没有任何数据迁移代码，本次也没有新增。</b>「存档覆盖默认」这一行本身就实现了需求，
+    反过来说 —— 谁要是"顺手加个迁移把老用户切到新默认"，就会<b>静默</b>破坏这条约束
+    （界面上完全看不出来，只有用户会觉得"我的速度怎么变了"）。
+    已在 <code>load()</code> 与 <code>SPEED_PRESETS</code> 上方写明禁令注释，并加了自动化断言。
+  </div>
+
+  <div class="note">
+    <b>一个必须知道的边界：</b>存档只在用户<b>真的改过设置</b>时才产生 ——
+    <code>app.onLaunch</code> 只调 <code>prefs.load()</code>（只读不写），所有 <code>updatePrefs</code>
+    都在点击处理里。所以「从没进过设置页」的用户没有存档，会走默认值。
+    这是<b>上一轮</b>把默认 200→50 带来的，<b>不是本次加档造成</b>；本次 <code>DEFAULTS.speed</code> 一个字没动。
+  </div>
+
+  <h2>四、验证方式</h2>
+
+  <h3>1. 专项测试（新增，已进全量回归）</h3>
+  <pre>node speed_preset.test.js</pre>
+  <table>
+    <tr><th>分组</th><th>验证内容</th><th>结果</th></tr>
+    <tr><td>档位定义</td><td>5 档 / 首位是「极慢」/ 值 50 / 升序 / 区间内 / 不重复 / === 默认值</td><td class="ok">7/0</td></tr>
+    <tr><td>新用户</td><td>无存档 → 50（原有默认值不变）；设置页出现 5 个按钮且选中「极慢」</td><td class="ok">4/0</td></tr>
+    <tr><td>老用户不改档</td><td>原档位 200/140/110/240/50/333/40/400 逐一验证，<b>并断言 storage 未被改写</b></td><td class="ok">18/0</td></tr>
+    <tr><td>读操作幂等</td><td>连续 3 次 load 恒为原档（无副作用）</td><td class="ok">1/0</td></tr>
+    <tr><td>手选极慢</td><td>点按钮 → 页面数据 50 → <b>已落盘</b> → 内存态同步 → <b>重进仍为 50</b> → 换算 30px/s</td><td class="ok">7/0</td></tr>
+    <tr><td>切回其他档</td><td>标准 200 / 慢速 110 仍能保存生效</td><td class="ok">2/0</td></tr>
+    <tr><td>±20 步进</td><td>50+20=70、70−20=50；<b>值缺失时按 50 起步而非旧默认 200</b></td><td class="ok">3/0</td></tr>
+    <tr><td>恢复默认</td><td>reset 后为 50 且命中「极慢」按钮</td><td class="ok">2/0</td></tr>
+  </table>
+
+  <h3>2. 默认值一致性</h3>
+  <pre>node defaults_check.js</pre>
+  <p class="muted" style="margin:4px 0 0">15/0 通过。本次补了两块：<b>扫描范围加入 settings.js</b>，
+  以及新增「预设档位 ↔ 默认值」关系断言（极慢必须是首档、必须与 <code>DEFAULTS.speed</code> 同值、必须升序）。</p>
+
+  <h3>3. 全量回归</h3>
+  <pre>for f in *.test.js; do node "$f" || echo "❌ $f"; done</pre>
+  <p class="muted" style="margin:4px 0 0">38 套件 0 失败（含新增的 speed_preset）。其余测试台：
+  分类测试台 183/0、P1–P5 修复验证 28/0、悟空拆分零变化 0/14、引导 22 机型 0 溢出。</p>
+
+  <h2>五、顺手修掉的一个隐患</h2>
+  <p><code>settings.js</code> 的 ±20 步进里还留着 <code>|| 200</code>（上一轮改默认时漏改的第 4 处）。
+  后果：一旦 <code>prefs.speed</code> 取值缺失，速度会<b>莫名其妙跳到 220</b>。已改为引用
+  <code>prefsEngine.DEFAULTS.speed</code>，不再有魔法数字。</p>
+  <div class="note">
+    <b>教训：</b>上一轮的 <code>defaults_check.js</code> 只扫了 <code>teleprompter.js</code> /
+    <code>edit.js</code>，<b>没扫 settings.js</b>，所以这处潜伏到现在才被发现 —— 是这次加档位
+    顺带撞出来的。<b>「有没有漏改」这类检查，范围要按引用点枚举，不能凭记忆列文件。</b>
+    已把 settings.js 补进扫描清单并写进 CONTEXT.md。
+  </div>
+
+  <h2>六、改动清单</h2>
+  <table>
+    <tr><th>文件</th><th>改动</th></tr>
+    <tr><td><code>miniprogram/engine/prefs.js</code></td><td>SPEED_PRESETS 新增「极慢 50」到首位；DEFAULTS.speed 注释补充；load() 加禁令注释</td></tr>
+    <tr><td><code>miniprogram/pages/settings/settings.js</code></td><td>±20 步进兜底 <code>|| 200</code> → <code>prefsEngine.DEFAULTS.speed</code></td></tr>
+    <tr><td><code>miniprogram/pages/settings/settings.wxml</code></td><td>提示文案补入「极慢 50（默认，约 2 秒一行）」</td></tr>
+    <tr><td><code>speed_preset.test.js</code></td><td><span class="ok">新增</span> 45 断言专项回归</td></tr>
+    <tr><td><code>defaults_check.js</code></td><td>扫描范围补 settings.js；新增预设↔默认值关系断言</td></tr>
+    <tr><td><code>CONTEXT.md</code></td><td>登记定义位置、防迁移机制、边界与教训</td></tr>
+  </table>
+
+  <p class="muted" style="margin-top:26px;font-size:13px">
+    未改动：<code>DEFAULTS.speed</code>、<code>load()</code> 逻辑、任何迁移代码、
+    提词台滑块与菜单、视觉风格 —— 本次是纯增量。
+  </p>
+
+</div>
+</body>
+</html>
