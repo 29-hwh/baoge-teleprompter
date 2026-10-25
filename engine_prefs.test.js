@@ -52,7 +52,9 @@ ok('预设键与内置方案一致', prefs.PRESET_THEMES.every((p) => !!prefs.CO
 
 console.log('\n=== 7. 新字段有默认值 ===')
 const d = prefs.DEFAULTS
-ok('roleHighlightMode 默认 full', d.roleHighlightMode === 'full')
+// 2026-09-29 起默认改为 name（仅名字上色，台词回落正文色）：
+// 整行染色会让满屏都是颜色、反而看不清谁在说。full 仍可通过设置切回。
+ok('roleHighlightMode 默认 name', d.roleHighlightMode === 'name')
 ok('fontFamily 默认 system', d.fontFamily === 'system')
 ok('smartSegment 默认 false（智能分段已下线，仅兼容老存储）', d.smartSegment === false)
 ok('bgColor/textColor 默认 null', d.bgColor === null && d.textColor === null)

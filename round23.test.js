@@ -6,7 +6,7 @@
  *   2) 菜单「播放/暂停」按钮真实切换并反映状态
  *   3) 双击切换控制菜单（开着收起、关着呼出）
  *   4) 横屏菜单最多占屏幕 1/5
- *   5) 三种滚动方式默认=匀速(smooth)，可切换
+ *   5) 两种滚动方式默认=匀速(smooth)，可切换
  *   6) 拆分导入真实产出多篇并归入独立文件夹分区
  */
 'use strict'
@@ -179,14 +179,11 @@ tp.winHeight = 667
 tp._fitMenuToScreen()
 ok('竖屏菜单高度明显高于横屏1/5', tp.data.menuHeight > cap, `portrait menuHeight=${tp.data.menuHeight}`)
 
-console.log('\n=== 23-5. 三种滚动方式，默认=匀速(smooth) ===')
-ok('SCROLL_STYLES 含 3 种', prefsEngine.SCROLL_STYLES.length === 3,
+console.log('\n=== 23-5. 两种滚动方式，默认=匀速(smooth) ===')
+ok('SCROLL_STYLES 含 2 种', prefsEngine.SCROLL_STYLES.length === 2,
    JSON.stringify(prefsEngine.SCROLL_STYLES.map(s => s.key)))
 ok('默认 scrollStyle = smooth', prefsEngine.DEFAULTS.scrollStyle === 'smooth')
 ok('加载后 data.scrollStyle = smooth', tp.data.scrollStyle === 'smooth', `scrollStyle=${tp.data.scrollStyle}`)
-// 切到「逐段」
-tp.onSetScrollStyle({ currentTarget: { dataset: { key: 'page' } } })
-ok('切到 page 后 scrollStyle=page', tp.data.scrollStyle === 'page', `scrollStyle=${tp.data.scrollStyle}`)
 // 直接应用声控（绕过权限弹窗，验证模式切换本身）
 tp._applyScrollStyle('voice')
 ok('应用 voice 后 scrollStyle=voice 且 voiceEnabled=true',
