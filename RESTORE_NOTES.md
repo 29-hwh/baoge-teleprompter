@@ -39,10 +39,13 @@
 3. 可能还有少数从未被工具写过的文件（纯手写/`git clone` 进来的）不在历史里，
    但当前 `miniprogram/` 全量文件齐备，不影响运行。
 
-## 五、下一步建议
+## 五、当前位置与下一步建议
+
+工程已于 2026-10-26 迁至 `/Users/huweihua/WorkBuddy/宝哥提词器/baoge-teleprompter/`
+（恢复过程产生的中间产物在同级 `../恢复档案/`）。
 
 ```bash
-cd "/Users/huweihua/WorkBuddy/2026-09-02-10-33-02/baoge-teleprompter"
+cd "/Users/huweihua/WorkBuddy/宝哥提词器/baoge-teleprompter"
 # 立刻加远程仓库，别再只留本地
 git remote add origin <你的私有仓库地址>
 git push -u origin main

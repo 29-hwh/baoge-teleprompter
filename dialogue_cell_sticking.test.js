@@ -2,7 +2,9 @@
 // 触发样本：《建华&小凤的生活81-90.docx》第84/85/87集：同一台词单元格内多轮对白
 // 的后一句说话人名字与前一句内容直接粘连（无标点/空格），旧规则会把前句截断、
 // 把真实说话人名字污染成伪说话人，导致「台词高亮后面半截失效」。
-const U = '/Users/huweihua/WorkBuddy/2026-09-02-10-33-02/baoge-teleprompter/miniprogram/utils/util.js'
+// 用相对路径解析，勿硬编码工程绝对路径（工程目录一挪测试就 MODULE_NOT_FOUND）
+const path = require('path')
+const U = path.join(__dirname, 'miniprogram/utils/util.js')
 const util = require(U)
 const sdc = util.splitDialogueCell
 
