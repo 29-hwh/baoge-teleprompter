@@ -2,4 +2,8 @@ node_modules/
 .DS_Store
 project.private.config.json
 *.log
-tools/guide_fit/shots/
+
+# 引导截图不忽略 —— 它们是《三项调整_实现点与影响范围》报告的组成部分，
+# 报告按相对路径引用；若被忽略，换台机器打开就成了缺图文档。
+# 体积很小（6 张约 130KB），随代码走。
+# 重新生成：node tools/guide_fit/measure.js 375x667 --shot "tools/guide_fit/shots/p_%s.png"
