@@ -99,29 +99,16 @@
           <view class="switch {{smartOff ? 'on' : ''}}"></view>
         </view>
 
-        <!-- 高亮设置：原「显示设置 → 高亮与辅助」里的「高亮方式（名字高亮 / 名字+台词高亮）」
-             已搬到这里，与台词选择放在同一处；并提供一个开关做一键关闭。
-             开关状态直接读 prefs.roleHighlight（与设置页同源，两边不会打架）。 -->
+        <!-- 角色高亮开关：与设置页 / 提词台同源（prefs.roleHighlight），三处不会打架。
+             2026-10-27：原来的「高亮方式（名字高亮 / 名字+台词高亮）」二选一已整块删除 ——
+             「名字+台词」整行高亮下线后只剩一种方式，没有可选项就不该留选择器。 -->
         <view class="switch-row" bindtap="onToggleRoleHighlight">
           <view class="switch-text">
             <view class="switch-title">角色高亮</view>
-            <view class="tiny">一键关闭后，名字与台词都不再分色，全部用默认颜色显示</view>
+            <view class="tiny">关闭后角色名不再分色，全部用默认颜色显示</view>
           </view>
           <view class="switch {{roleHighlight ? 'on' : ''}}"></view>
         </view>
-
-        <block wx:if="{{roleHighlight}}">
-          <view class="tiny role-hl-label">高亮方式</view>
-          <view class="role-display-actions">
-            <text
-              wx:for="{{roleModeOptions}}"
-              wx:key="value"
-              class="seg-btn {{highlightMode === item.value ? 'on' : ''}}"
-              data-value="{{item.value}}"
-              bindtap="onTapRoleMode"
-            >{{item.label}}</text>
-          </view>
-        </block>
 
         <!-- 智能已关闭：不再展示过滤操作，避免「点了却不生效」的困惑（配置仍保留，关掉开关即恢复） -->
         <view wx:if="{{smartOff}}" class="role-display-off-tip">智能功能已关闭，提词页将完整显示全部台词。</view>
@@ -208,7 +195,10 @@
   <!-- 首次使用引导（只看一次）
        与提词页引导同一套字号层级与三段式结构：标题固定 / 步骤可滚 / 按钮吸底
        文案原则：主标 ≤8 字讲「做什么」，说明 ≤15 字讲「怎么用」，
-                 去掉「（二选一）」这类与「或」重复的赘词 -->
+                 去掉「（二选一）」这类与「或」重复的赘词
+       2026-10-27：① 图标位换成圆形序号徽标，和提词页一致，突出「先 1 后 2」；
+                  ② 补一条「角色：台词」分色示例 —— 「会自动分色」是纯抽象描述，
+                     用户还不知道分色长什么样、该写成什么格式，给两行真的样例最快。 -->
   <view wx:if="{{editGuideVisible}}" class="ed-guide-mask">
     <view class="ed-guide-card">
       <view class="ed-guide-head">
@@ -217,12 +207,19 @@
       </view>
       <view class="ed-guide-body">
         <view class="ed-guide-item">
-          <text class="ed-guide-ico">✎</text>
+          <text class="ed-guide-num">1</text>
           <view class="ed-guide-txt"><text class="ed-guide-b">准备台词</text><text class="ed-guide-d">直接写、粘贴，或从首页导入</text></view>
         </view>
         <view class="ed-guide-item">
-          <text class="ed-guide-ico">▶</text>
-          <view class="ed-guide-txt"><text class="ed-guide-b">点「开始提词」</text><text class="ed-guide-d">「角色：台词」会自动分色</text></view>
+          <text class="ed-guide-num">2</text>
+          <view class="ed-guide-txt"><text class="ed-guide-b">点「开始提词」</text><text class="ed-guide-d">按「角色：台词」写就会分色</text></view>
+        </view>
+        <!-- 示例的两个角色名与台词，刻意和下面 textarea 的 placeholder 完全一致
+             （林晚 / 顾辞 + 同样两句）—— 引导关掉后用户第一眼看到的 placeholder
+             就是同一套样例，能立刻对上号；若两处各写各的，等于让人学两遍。 -->
+        <view class="ed-guide-demo">
+          <view class="ed-guide-demo-row"><text class="ed-guide-demo-name" style="color:#FFD166">林晚</text><text class="ed-guide-demo-body">：你真的要走了吗</text></view>
+          <view class="ed-guide-demo-row"><text class="ed-guide-demo-name" style="color:#4CC9F0">顾辞</text><text class="ed-guide-demo-body">：公司调我去深圳</text></view>
         </view>
       </view>
       <view class="ed-guide-btn" bindtap="onCloseEditGuide">开始编写</view>

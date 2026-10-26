@@ -35,9 +35,11 @@ const DEFAULTS = {
   showGuide: true, // 视线参考线
   keepScreenOn: true, // 屏幕常亮
   roleHighlight: true, // 角色多色高亮
-  // full=名字+台词整行高亮；name=仅名字高亮，台词用默认色。
-  // 默认 'name'（2026-09-29 由 'full' 改）：整行染色会让满屏都是颜色、反而看不清谁在说，
-  // 只给名字上色既能区分角色又保持台词可读。用户可在提词台菜单 / 编辑页随时切回 'full'。
+  // 2026-10-27：高亮方式已收敛为**只有**「仅名字高亮」一种，'full'（名字+台词整行高亮）
+  // 整个下线 —— 提词台与编辑页的切换入口都删了，normalize() 会把老存档的 'full' 归一成 'name'。
+  // 保留这个字段而不删，是为了兼容已落盘的 prefs_v1（少了字段会让下面 smartPatch 的快照逻辑
+  // 多一条 undefined 分支）与按字段名做断言的既有测试。
+  // 历史：默认值 2026-09-29 由 'full' 改为 'name' —— 整行染色会让满屏都是颜色、反而看不清谁在说。
   roleHighlightMode: 'name',
   voiceControl: false, // 声控跟读
   // 智能分段已下线：实测对提词阅读没有可感知收益，反而把用户原本的换行打乱。
@@ -158,6 +160,14 @@ function normalize(p) {
   if (p.scrollStyle === 'page') p.scrollStyle = 'smooth'
   if (p.scrollMode === 'page') p.scrollMode = 'auto'
   /*
+   * 2026-10-27：高亮方式只剩「名字高亮」一种，「名字+台词」（full）整行高亮已下线。
+   * 老存档里可能残留 'full'（甚至 smartOffSaved 里也存过），在这里无条件归一成 'name'。
+   * 注意：**只归一方式，不动 roleHighlight 这个开关本身** —— 用户"要不要分色"的选择
+   * 必须原样保留，被下线的只是"分到什么范围"，这两件事不能混。
+   * 归一放在 smartOff 分支之前，下面两处快照/恢复就自然拿到的都是 'name'。
+   */
+  p.roleHighlightMode = 'name'
+  /*
    * 不变式：智能总闸开着 ⇒ 角色高亮必须是关的（否则两个开关状态自相矛盾）。
    * 读写两侧都走这里（patch() 保存前也会再归一化一次），所以无论从哪个入口写
    * smartOff，界面上的总闸与高亮都不会打架。
@@ -168,13 +178,12 @@ function normalize(p) {
     if (p.roleHighlight !== false) {
       p.smartOffSaved = p.smartOffSaved || {
         roleHighlight: true,
-        roleHighlightMode: p.roleHighlightMode === 'name' ? 'name' : 'full'
+        roleHighlightMode: p.roleHighlightMode
       }
       p.roleHighlight = false
     }
   } else if (p.smartOffSaved) {
     p.roleHighlight = p.smartOffSaved.roleHighlight !== false
-    p.roleHighlightMode = p.smartOffSaved.roleHighlightMode === 'name' ? 'name' : 'full'
     p.smartOffSaved = null
   }
   return p
@@ -203,7 +212,7 @@ function smartPatch(cur, key, on) {
       // 已经开着就沿用旧快照，别把「开闸前的高亮状态」覆盖成已关闭
       const saved = p.smartOff ? p.smartOffSaved : {
         roleHighlight: p.roleHighlight !== false,
-        roleHighlightMode: p.roleHighlightMode === 'name' ? 'name' : 'full'
+        roleHighlightMode: 'name'
       }
       return { smartOff: true, roleHighlight: false, smartOffSaved: saved }
     }
@@ -211,7 +220,7 @@ function smartPatch(cur, key, on) {
     return {
       smartOff: false,
       roleHighlight: s ? s.roleHighlight !== false : true,
-      roleHighlightMode: s && s.roleHighlightMode === 'name' ? 'name' : 'full',
+      roleHighlightMode: 'name',
       smartOffSaved: null
     }
   }

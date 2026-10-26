@@ -114,8 +114,9 @@ Page({
     this.setData({ prefs: next })
   },
 
-/** 注：「角色高亮方式（名字 / 名字+台词）」的入口已移到编辑页「角色显示选择」面板，
-   *  本页不再提供该选项，故 onTapRoleMode 一并移除（改由 edit.js 处理）。 */
+  /* 注：「角色高亮方式（名字 / 名字+台词）」这个二选一设置已整体下线
+     （2026-10-27，只剩「仅名字高亮」一种方式），本页与编辑页都不再提供入口；
+     高亮的开与关走 prefs.roleHighlight，三处入口共用同一个开关。 */
 
   onTapLineHeight(e) {
     this._set({ lineHeight: Number(e.currentTarget.dataset.value) })

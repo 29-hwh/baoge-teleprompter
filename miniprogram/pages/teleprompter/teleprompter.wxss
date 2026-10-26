@@ -556,17 +556,29 @@
   margin-bottom: 0;
 }
 
-.tp-guide-ico {
-  font-size: 30rpx;
-  font-size: 4vmin;
-  color: #7BE0AD;
+/* 步骤序号徽标：直径沿用原图标列宽（46rpx / 6.13vmin），横向占位与改动前完全一致。
+   描边刻意用 px 而不是 rpx —— 1px 细描边不该随屏幕放大，横屏时 rpx 会把它撑成一条粗边。
+   line-height 比 height 少 2px，是因为上下各 1px 边框在 box-sizing:border-box 下会吃掉内容高度，
+   不减的话数字会整体下沉 1px，与右侧主标的中线对不齐。 */
+.tp-guide-num {
   width: 46rpx;
   width: 6.13vmin;
+  height: 46rpx;
+  height: 6.13vmin;
   flex-shrink: 0;
-  line-height: 1.2;
-  /* 与右侧主标第一行的视觉中线对齐 */
-  margin-top: 3rpx;
-  margin-top: 0.2vmin;
+  box-sizing: border-box;
+  border: 1px solid rgba(123, 224, 173, 0.45);
+  border-radius: 50%;
+  background: rgba(123, 224, 173, 0.14);
+  color: #7BE0AD;
+  font-size: 22rpx;
+  font-size: 2.93vmin;
+  line-height: 44rpx;
+  line-height: 5.9vmin;
+  text-align: center;
+  /* 与右侧主标第一行的视觉中线对齐（徽标比原图标高，故略微上提） */
+  margin-top: -2rpx;
+  margin-top: -0.27vmin;
 }
 
 .tp-guide-txt {

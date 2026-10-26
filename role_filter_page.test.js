@@ -144,22 +144,26 @@ console.log('\n══════ 6. 与角色高亮协同：显示出的行仍�
   const page = makePage()
   page.onLoad({ id: s.id })
   page.onReady()
-  // 2026-09-29 口径变更：默认高亮方式由 'full' 改为 'name'。
-  // 于是默认状态下「名字是角色色、台词回落正文色」；整行着色改为**显式切到 full** 再验，
-  // 这样两种模式都仍有覆盖，不会因为改默认而丢掉 full 的回归。
+  // 2026-09-29：默认高亮方式由 'full' 改为 'name'。
+  // 2026-10-27：'full'（名字+台词整行高亮）**整个下线** —— 不是"默认 name"而是"只有 name"，
+  // 提词台与编辑页的切换入口都已删除。于是这里验两件事：
+  //   ① 默认状态：名字角色色 / 台词正文色；
+  //   ② 老存档里残留 'full' 时，重排后台词必须仍是正文色 —— 不能让整行高亮"复活"。
   const ln = page.displayLines.find((l) => l.role === '林晚')
   check('林晚行 prefixColor 为角色色（非正文色）', !!ln && !!ln.prefixColor && ln.prefixColor !== page.data.textColor, ln && ln.prefixColor)
-  check('默认 name 模式：林晚 bodyColor 回落正文色', !!ln && ln.bodyColor === page.data.textColor)
-  check('默认 name 模式：隐藏角色行的 bodyColor 同样回落正文色', page.allLines.find((l) => l.role === '建华').bodyColor === page.data.textColor)
-  // 显式切 full：整行高亮必须仍然可用（不能因为改了默认就把这条能力改没了）
-  page.onSetRoleMode({ currentTarget: { dataset: { mode: 'full' } } })
-  const lnF = page.displayLines.find((l) => l.role === '林晚')
-  check('切 full 模式：林晚 bodyColor 为角色色（整行高亮）', !!lnF && lnF.bodyColor !== page.data.textColor)
-  // 切回 name 模式：台词回落正文色，但名字仍角色色
-  page.onSetRoleMode({ currentTarget: { dataset: { mode: 'name' } } })
-  const ln2 = page.displayLines.find((l) => l.role === '林晚')
-  check('切 name 模式：林晚 bodyColor 回落正文色', ln2.bodyColor === page.data.textColor)
-  check('切 name 模式：林晚 prefixColor 仍角色色', ln2.prefixColor !== page.data.textColor)
+  check('名字高亮：林晚 bodyColor 回落正文色', !!ln && ln.bodyColor === page.data.textColor)
+  check('名字高亮：隐藏角色行的 bodyColor 同样回落正文色', page.allLines.find((l) => l.role === '建华').bodyColor === page.data.textColor)
+
+  // 老存档残留 'full'：prefs.normalize 会归一成 'name'，渲染层也不该再有 full 分支
+  appMock.updatePrefs({ roleHighlightMode: 'full' })
+  page._relayoutKeepProgress()
+  const lnOld = page.displayLines.find((l) => l.role === '林晚')
+  check('残留 full 存档：台词仍为正文色（整行高亮不会复活）',
+    !!lnOld && lnOld.bodyColor === page.data.textColor, lnOld && lnOld.bodyColor)
+  check('残留 full 存档：名字仍是角色色（分色本身没被误关）',
+    !!lnOld && lnOld.prefixColor !== page.data.textColor)
+  check('prefs 里存的 roleHighlightMode 已被归一成 name',
+    appMock.globalData.prefs.roleHighlightMode === 'name', appMock.globalData.prefs.roleHighlightMode)
 }
 
 console.log('\n══════ 7. 保留的程序化入口 onSetRoleFilter 仍可用 ══════')

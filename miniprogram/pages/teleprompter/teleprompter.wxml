@@ -145,11 +145,13 @@
       >{{s.label}}</view>
     </view>
 
-    <!-- 横竖屏 + 角色高亮模式（需求 5 / 7：竖屏只显示「切换横屏」，横屏只显示「切换竖屏」） -->
+    <!-- 横竖屏 + 角色高亮开关（需求 5 / 7：竖屏只显示「切换横屏」，横屏只显示「切换竖屏」）
+         2026-10-27：原来的「名字高亮 / 名字+台词」两个互斥按钮合并成一个开关。
+         「名字+台词」整行高亮已下线，只剩一种方式时，两个按钮里必有一个永远亮着、
+         另一个点了才亮 —— 与其留一个假选项，不如直接做成「开 / 关」。 -->
     <view class="tp-row">
       <view class="tp-btn" bindtap="onToggleOrientation">{{orientation === 'landscape' ? '切竖屏' : '切横屏'}}</view>
-      <view class="tp-btn {{roleHighlightMode === 'name' ? 'on' : ''}}" bindtap="onSetRoleMode" data-mode="name">名字高亮</view>
-      <view class="tp-btn {{roleHighlightMode === 'full' ? 'on' : ''}}" bindtap="onSetRoleMode" data-mode="full">名字+台词</view>
+      <view class="tp-btn {{roleHighlight ? 'on' : ''}}" bindtap="onToggleRoleHighlight">{{roleHighlight ? '高亮 开' : '高亮 关'}}</view>
     </view>
 
     <!-- 字体大小调整（需求 3：菜单内 A-/A+） -->
@@ -210,7 +212,10 @@
   <!-- 首次使用引导（只看一次）
        结构：标题区固定 / 步骤区可滚 / 主按钮吸底 —— 横屏视口矮也不会裁掉按钮
        文案原则：主标 ≤8 字讲「做什么」，说明 ≤15 字讲「怎么用 / 为什么」，
-                 主标与说明不重复（原第 2 条主副两处都在说「跳位/翻页」） -->
+                 主标与说明不重复（原第 2 条主副两处都在说「跳位/翻页」）
+       2026-10-27：图标位改成圆形序号徽标 —— 原来 ▶ / » / ⚙ 三个图形彼此没有先后关系，
+                 看起来像三个并列功能而不是一条流程；换成 1/2/3 之后「先做什么后做什么」
+                 一眼可见，且图形本身在文案里都已写明（点播放 / 拖进度条 / 双击），不丢信息。 -->
   <view wx:if="{{guideVisible}}" class="tp-guide-mask" bindtap="onCloseGuide">
     <view class="tp-guide-card">
       <view class="tp-guide-head">
@@ -219,15 +224,15 @@
       </view>
       <view class="tp-guide-body">
         <view class="tp-guide-item">
-          <text class="tp-guide-ico">▶</text>
+          <text class="tp-guide-num">1</text>
           <view class="tp-guide-txt"><text class="tp-guide-b">点「播放」开始</text><text class="tp-guide-d">台词匀速上移，跟着参考线看</text></view>
         </view>
         <view class="tp-guide-item">
-          <text class="tp-guide-ico">»</text>
+          <text class="tp-guide-num">2</text>
           <view class="tp-guide-txt"><text class="tp-guide-b">拖进度条跳位</text><text class="tp-guide-d">上下滑也能翻页</text></view>
         </view>
         <view class="tp-guide-item">
-          <text class="tp-guide-ico">⚙</text>
+          <text class="tp-guide-num">3</text>
           <view class="tp-guide-txt"><text class="tp-guide-b">双击屏幕唤出菜单</text><text class="tp-guide-d">控件自动隐藏，设置和退出在这</text></view>
         </view>
       </view>

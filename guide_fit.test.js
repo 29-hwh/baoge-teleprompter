@@ -89,17 +89,55 @@ for (const g of GUIDES) {
     && new RegExp(`\\.${p}-body\\s*\\{[^}]*overflow-y:\\s*auto`).test(css))
   ok(`${g.key}：主按钮吸底不滚`, new RegExp(`\\.${p}-btn\\s*\\{[^}]*flex-shrink:\\s*0`).test(css))
 
-  // 图标必须显式染色，不能靠继承（否则同卡片里两个图标不同色）
-  ok(`${g.key}：图标有显式 color`, new RegExp(`\\.${p}-ico\\s*\\{[^}]*color:`).test(css))
+  // 序号徽标必须显式染色，不能靠继承（否则会和卡片里其它元素串色）。
+  // 2026-10-27：图标位（-ico）改成圆形序号徽标（-num），断言跟着改口径。
+  ok(`${g.key}：序号徽标有显式 color`, new RegExp(`\\.${p}-num\\s*\\{[^}]*color:`).test(css))
 
-  // U+23E9(U+23F0 系列) 是强制彩色 emoji，不跟随 color，禁止出现在图标位
-  ok(`${g.key}：图标位没有强制彩色 emoji`, !new RegExp(`class="${p}-ico"[^>]*>[⏩⏰⏳]`).test(wxml))
+  // 序号必须是纯数字 1..N（不能换成 ①②③ 这类带圈字符 —— 部分安卓字体把它渲染成
+  // 彩色 emoji 或方框，也不受 font-size 控制大小），且徽标数量与步骤数一致。
+  const nums = (wxml.match(new RegExp(`class="${p}-num"[^>]*>([^<]*)<`, 'g')) || [])
+    .map((s) => s.replace(/^[^>]*>/, '').replace(/<$/, ''))
+  const expectNums = nums.map((_, i) => String(i + 1))
+  ok(`${g.key}：序号是连续的纯数字 1…N`, nums.length >= 2 && nums.join(',') === expectNums.join(','),
+    `实际 [${nums.join(',')}]`)
+
+  // U+23E9(U+23F0 系列) 是强制彩色 emoji，不跟随 color，禁止出现在图标/徽标位
+  ok(`${g.key}：徽标位没有强制彩色 emoji`, !new RegExp(`class="${p}-num"[^>]*>[⏩⏰⏳]`).test(wxml))
 
   // 引导块结构：标题 / 副标 / 步骤 / 按钮齐备
   const items = (wxml.match(new RegExp(`class="${p}-item"`, 'g')) || []).length
   ok(`${g.key}：步骤数 ${items} 条（≥2）`, items >= 2, `实际 ${items}`)
   ok(`${g.key}：有导出回调 bindtap`, new RegExp(`class="${p}-btn"\\s+bindtap="`).test(wxml))
   ok(`${g.key}：入口受开关注解`, wxml.includes('wx:if="{{') && wxml.includes(g.mask))
+}
+
+// ---------- A2. 编辑页分色示例：颜色必须等于真实调色板 ----------
+// 示例是「照我这样写就能看到这个效果」的承诺。如果示例写死两个颜色、而 role.js 的调色板
+// 后来改了，用户照着写却看到另一种颜色 —— 示例就从帮助变成了误导。所以这里把
+// 「示例颜色 ⊆ PALETTE_DARK 前两位」钉死，调色板一动测试就会红。
+console.log('\n=== A2. 引导示例与真实调色板一致 ===')
+{
+  const ROLE_JS = fs.readFileSync(path.join(MP, 'engine/role.js'), 'utf8')
+  const paletteBlock = (ROLE_JS.match(/const PALETTE_DARK = \[([\s\S]*?)\]/) || [, ''])[1]
+  const palette = (paletteBlock.match(/#[0-9A-Fa-f]{6}/g) || []).map((c) => c.toUpperCase())
+  const ED_WXML = fs.readFileSync(path.join(MP, 'pages/edit/edit.wxml'), 'utf8')
+  const demoColors = (ED_WXML.match(/class="ed-guide-demo-name"[^>]*color:\s*(#[0-9A-Fa-f]{6})/g) || [])
+    .map((s) => (s.match(/#[0-9A-Fa-f]{6}/) || [''])[0].toUpperCase())
+
+  ok('编辑页引导带分色示例，且给了两个角色名', demoColors.length === 2, `实际 ${demoColors.length} 个`)
+  ok('示例颜色全部取自 PALETTE_DARK（照引导写 = 看到同款颜色）',
+    demoColors.length > 0 && demoColors.every((c) => palette.includes(c)),
+    `示例 [${demoColors.join(',')}] 调色板 [${palette.slice(0, 3).join(',')}…]`)
+  ok('两个角色名用了不同颜色（同色就看不出"分色"）',
+    new Set(demoColors).size === demoColors.length)
+
+  // 同一页的 textarea placeholder 里本来就有一套示例（林晚 / 顾辞）。
+  // 引导若另起一套名字，等于让用户先后学两遍不同样例 —— 必须收敛成同一套。
+  const ph = (ED_WXML.match(/placeholder="粘贴台词[\s\S]*?"/) || [''])[0]
+  const demoNames = [...ED_WXML.matchAll(/class="ed-guide-demo-name"[^>]*>([^<]+)</g)].map((m) => m[1])
+  ok('示例角色名与输入框 placeholder 是同一套（不让人学两遍）',
+    demoNames.length > 0 && ph !== '' && demoNames.every((n) => ph.includes(n)),
+    `示例 [${demoNames.join(',')}] / placeholder ${ph.slice(0, 40)}`)
 }
 
 // ---------- B. 动态渲染测量 ----------

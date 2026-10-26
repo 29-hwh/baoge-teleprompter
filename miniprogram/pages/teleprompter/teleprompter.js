@@ -42,7 +42,9 @@ Page({
     textColor: '#FFFFFF',
     isDark: true,
     fontFamily: "-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif",
-    roleHighlightMode: 'name', // 与 prefs.DEFAULTS.roleHighlightMode 保持一致
+    // 角色高亮开关（只给名字上色，台词保持正文色）。
+    // 2026-10-27 起「名字+台词」整行高亮已下线，页面不再需要 roleHighlightMode。
+    roleHighlight: true,
     mirror: false,
     showGuide: true,
     marginHorizontal: 40,
@@ -553,15 +555,15 @@ Page({
     // 之前由 WXML 用 `roleHighlightMode === 'name' && line.color ? textColor : ...`
     // 现场判断，两种模式的差异非常依赖这个表达式正确求值，实际很容易失效；
     // 现在改成在排版期就把「名字色 / 台词色」落到每个字段上，渲染层只做直读。
-    //   - name 模式：只有角色名彩色，台词回落正文色
-    //   - full 模式：名字 + 台词都用角色色（整行高亮）
-    const mode = prefs.roleHighlightMode === 'name' ? 'name' : 'full'
+    // 2026-10-27：高亮方式收敛为只有「名字高亮」，full 整行高亮已下线 ——
+    //   角色名：用角色色
+    //   台词  ：恒用正文色（不再有按模式二选一的分支，少一个能失效的判据）
     parsed.lines.forEach((line, i) => {
       line._i = i
       const roleColor = line.role ? roleEngine.colorOf(parsed.roles, line.role) : null
       line.color = roleColor
       line.prefixColor = roleColor || eff.text
-      line.bodyColor = mode === 'full' && roleColor ? roleColor : eff.text
+      line.bodyColor = eff.text
     })
 
     this.allLines = parsed.lines
@@ -609,7 +611,8 @@ Page({
       textColor: eff.text,
       isDark: eff.isDark,
       fontFamily: prefsEngine.fontFamilyCss(prefs.fontFamily),
-      roleHighlightMode: mode,
+      // 高亮开关的真实状态：总闸开着时高亮必然是关的（与 prefs.normalize 的不变式一致）
+      roleHighlight: smartOff ? false : prefs.roleHighlight !== false,
       colorScheme: prefs.colorScheme || 'white-on-black',
       mirror: !!prefs.mirror,
       showGuide: prefs.showGuide !== false,
@@ -1130,15 +1133,17 @@ Page({
     this._pokeMenu()
   },
 
-  /** 角色高亮模式：name=仅名字高亮 / full=名字+台词高亮（需求 4 + 需求 5） */
-  onSetRoleMode(e) {
-    const mode = e.currentTarget.dataset.mode === 'name' ? 'name' : 'full'
-    if (mode === this.data.roleHighlightMode) {
-      this._pokeMenu()
-      return
-    }
-    app.updatePrefs({ roleHighlightMode: mode })
-    this.setData({ roleHighlightMode: mode })
+  /**
+   * 角色高亮开关（只给名字上色，台词保持正文色）。
+   * 2026-10-27：「名字+台词」整行高亮已下线，原来两个互斥按钮合并成这一个开关。
+   * 与编辑页 / 设置页同源（prefs.roleHighlight），且统一走 smartPatch ——
+   * 总闸开着时手动开高亮会自动解除总闸，绝不出现「总闸开 + 高亮开」的矛盾状态。
+   */
+  onToggleRoleHighlight() {
+    const next = !this.data.roleHighlight
+    const cur = (app.globalData && app.globalData.prefs) || prefsEngine.load()
+    const p = app.updatePrefs(prefsEngine.smartPatch(cur, 'roleHighlight', next))
+    this.setData({ roleHighlight: p.roleHighlight !== false })
     this._relayoutKeepProgress()
     this._pokeMenu()
   },

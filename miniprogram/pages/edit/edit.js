@@ -32,14 +32,10 @@ Page({
     roleDisplaySummary: '全文',
     // 一键关闭智能功能（全局 prefs）：开启后提词页停用角色过滤与高亮，台词 100% 完整显示
     smartOff: false,
-    // 角色高亮与高亮方式：与设置页同源（prefs.roleHighlight / roleHighlightMode）。
-    // 「名字高亮 / 名字+台词高亮」原先只在显示设置里，现已移到本页的角色显示选择面板内。
+    // 角色高亮开关：与设置页 / 提词台同源（prefs.roleHighlight）。
+    // 2026-10-27：「名字+台词」整行高亮已下线，只剩「仅名字高亮」一种方式，
+    // 所以页面不再需要 highlightMode / roleModeOptions 这套二选一状态。
     roleHighlight: true,
-    highlightMode: 'name', // 与 prefs.DEFAULTS.roleHighlightMode 保持一致
-    roleModeOptions: [
-      { label: '名字高亮', value: 'name' },
-      { label: '名字+台词高亮', value: 'full' }
-    ],
     roleTooMany: false,
     minutesText: '',
     editGuideVisible: false,
@@ -475,22 +471,16 @@ Page({
     util.toast(next ? '角色高亮已开' : '角色高亮已关：台词不再分色')
   },
 
-  /** 高亮方式：只给名字上色 / 名字和台词一起上色 */
-  onTapRoleMode(e) {
-    const next = app.updatePrefs({ roleHighlightMode: e.currentTarget.dataset.value })
-    this._syncSmartAndHighlight(next)
-  },
-
   /**
    * 把 prefs 里的智能开关与高亮状态同步到页面 data。
    * 总闸与高亮是一个联动的整体，共用一个出口，避免只更新其中一个导致开关显示不一致。
+   * 2026-10-27：高亮方式只剩一种，不再同步 highlightMode。
    */
   _syncSmartAndHighlight(p) {
     const q = p || {}
     this.setData({
       smartOff: !!q.smartOff,
-      roleHighlight: q.roleHighlight !== false,
-      highlightMode: q.roleHighlightMode === 'name' ? 'name' : 'full'
+      roleHighlight: q.roleHighlight !== false
     })
   },
 

@@ -6,6 +6,9 @@
  *      两个人的台词粘成一行 —— 脚本文档里看起来「粘连」就是这么来的。
  *   B. 「名字高亮 / 名字+台词高亮」从显示设置页移到编辑页「角色显示选择」面板，
  *      并在该面板新增「角色高亮」一键关闭开关。
+ *      ⚠️ 2026-10-27 变更：“名字+台词”整行高亮已**整个下线**，两个选项的选择器在
+ *      编辑页与提词台都删掉了，只剩「仅名字高亮」+ 一个开/关。B 段断言随之改为
+ *      「入口已全部清除」口径。
  *   C. 智能总闸（一键关闭智能功能）与角色高亮的联动：开总闸一并关高亮并存快照，
  *      关总闸按快照恢复原状态，两边入口（设置页 / 编辑页）状态永远一致。
  */
@@ -152,16 +155,23 @@ ok('B1 显示设置页已无「高亮方式」入口',
   SET_WXML.indexOf('onTapRoleMode') < 0 && SET_WXML.indexOf('roleModeOptions') < 0)
 ok('B2 设置页逻辑里也清掉了选项与 handler（无悬空引用）',
   SET_JS_CODE.indexOf('roleModeOptions') < 0 && SET_JS_CODE.indexOf('onTapRoleMode') < 0)
-ok('B3 编辑页「角色显示选择」面板内提供高亮方式',
-  ED_WXML.indexOf('onTapRoleMode') >= 0 && ED_WXML.indexOf('roleModeOptions') >= 0)
-ok('B4 两个选项文案原样保留',
-  ED_JS.indexOf("label: '名字高亮'") >= 0 && ED_JS.indexOf("label: '名字+台词高亮'") >= 0)
-ok('B5 面板内新增「角色高亮」一键关闭开关', ED_WXML.indexOf('onToggleRoleHighlight') >= 0)
-// 2026-09-29 口径变更：默认高亮方式 'full' → 'name'（见 prefs.DEFAULTS.roleHighlightMode）
-ok('B6 编辑页 data 带高亮状态与选项',
-  editDef.data.roleHighlight === true && editDef.data.highlightMode === 'name' &&
-  editDef.data.roleModeOptions.length === 2, JSON.stringify(editDef.data.roleModeOptions))
-ok('B7 提词台快捷菜单的高亮方式保持原样（本次未动）', TP_WXML.indexOf('onSetRoleMode') >= 0)
+ok('B3 编辑页已无「高亮方式」二选一入口（full 下线后没有可选项）',
+  ED_WXML.indexOf('onTapRoleMode') < 0 && ED_WXML.indexOf('roleModeOptions') < 0)
+// 2026-10-27 口径变更：「名字+台词」整行高亮整个下线，只剩「仅名字高亮」一种方式。
+// B3/B4/B6/B7 因此从「入口搬到了哪里」改为「入口已全部清除」——只留一种方式时，
+// 再摆一个选择器就是给用户一个永远点不动的假选项。
+ok('B4 编辑页逻辑里也删干净了选项与 handler（无悬空引用）',
+  stripComments(ED_JS).indexOf("label: '名字+台词高亮'") < 0 &&
+  stripComments(ED_JS).indexOf('roleModeOptions') < 0 &&
+  stripComments(ED_JS).indexOf('onTapRoleMode') < 0)
+ok('B5 面板内保留「角色高亮」一键关闭开关', ED_WXML.indexOf('onToggleRoleHighlight') >= 0)
+ok('B6 编辑页 data 只剩高亮开关状态（不再有 highlightMode / roleModeOptions）',
+  editDef.data.roleHighlight === true &&
+  editDef.data.highlightMode === undefined &&
+  editDef.data.roleModeOptions === undefined,
+  JSON.stringify({ roleHighlight: editDef.data.roleHighlight, highlightMode: editDef.data.highlightMode }))
+ok('B7 提词台菜单把两个模式按钮合并成「高亮 开/关」开关',
+  TP_WXML.indexOf('onSetRoleMode') < 0 && TP_WXML.indexOf('onToggleRoleHighlight') >= 0)
 
 // ============================================================
 console.log('\n=== 28-C. 智能总闸 ⇄ 角色高亮 联动 ===')

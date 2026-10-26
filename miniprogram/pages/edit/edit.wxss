@@ -341,11 +341,6 @@
 }
 
 /* 「高亮方式」小标题：面板内的次级说明，不做一级标题样式 */
-.role-hl-label {
-  margin: 4rpx 0 10rpx 4rpx;
-  color: var(--text-secondary);
-}
-
 /* 漏词风险说明：暖色警示，进面板第一眼看到 */
 .role-risk {
   display: flex;
@@ -666,18 +661,53 @@
   margin-bottom: 0;
 }
 
-.ed-guide-ico {
-  font-size: 30rpx;
-  font-size: 4vmin;
-  /* 原来没写 color，图标继承默认色：✎ 发白、▶ 发绿，两个图标不同色。
-     统一取本页强调色（与标题、按钮同色），图标体积小，不会抢标题的视觉重心。 */
-  color: #FFD166;
+/* 步骤序号徽标：与提词页引导同一套规格（46rpx / 6.13vmin 直径，px 描边，line-height 减 2px）。
+   2026-10-27：替代原图标位 —— 只有 2 步时 ⓐ、ⓑ 图形符号看不出先后，数字 1/2 一眼就懂。 */
+.ed-guide-num {
   width: 46rpx;
   width: 6.13vmin;
+  height: 46rpx;
+  height: 6.13vmin;
   flex-shrink: 0;
-  line-height: 1.2;
-  margin-top: 3rpx;
-  margin-top: 0.2vmin;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 209, 102, 0.45);
+  border-radius: 50%;
+  background: rgba(255, 209, 102, 0.14);
+  /* 统一取本页强调色（与标题、按钮同色），徽标体积小，不会抢标题的视觉重心 */
+  color: #FFD166;
+  font-size: 22rpx;
+  font-size: 2.93vmin;
+  line-height: 44rpx;
+  line-height: 5.9vmin;
+  text-align: center;
+  margin-top: -2rpx;
+  margin-top: -0.27vmin;
+}
+
+/* 「角色：台词」分色示例：把抽象格式变成能直接看见的东西。
+   两个名字刻意取自 role.js 的 PALETTE_DARK 前两位（#FFD166 琥珀黄 / #4CC9F0 天蓝）——
+   用户照着引导写出来的，必须和在提词页看到的是同一套颜色，否则示例本身就是误导。
+   左侧 2px 竖线用 px 不用 rpx：细装饰线不该随屏幕放大。 */
+.ed-guide-demo {
+  margin-top: 2rpx;
+  margin-top: 0.27vmin;
+  padding: 10rpx 12rpx;
+  padding: 1.33vmin 1.6vmin;
+  border-radius: 8rpx;
+  border-radius: 1.07vmin;
+  background: rgba(255, 255, 255, 0.07);
+  border-left: 2px solid rgba(255, 209, 102, 0.55);
+}
+
+.ed-guide-demo-row {
+  font-size: 22rpx;
+  font-size: 2.93vmin;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.ed-guide-demo-name {
+  font-weight: 600;
 }
 
 .ed-guide-txt {
