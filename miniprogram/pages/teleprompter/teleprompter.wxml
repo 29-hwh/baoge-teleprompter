@@ -208,25 +208,27 @@
   <!-- 复盘弹窗已移除（需求 3）：台词读完后不再弹复盘、也无历史复盘页 -->
 
   <!-- 首次使用引导（只看一次）
-       结构：标题区固定 / 步骤区可滚 / 主按钮吸底 —— 横屏视口矮也不会裁掉按钮 -->
+       结构：标题区固定 / 步骤区可滚 / 主按钮吸底 —— 横屏视口矮也不会裁掉按钮
+       文案原则：主标 ≤8 字讲「做什么」，说明 ≤15 字讲「怎么用 / 为什么」，
+                 主标与说明不重复（原第 2 条主副两处都在说「跳位/翻页」） -->
   <view wx:if="{{guideVisible}}" class="tp-guide-mask" bindtap="onCloseGuide">
     <view class="tp-guide-card">
       <view class="tp-guide-head">
         <view class="tp-guide-title">欢迎使用宝哥提词器</view>
-        <view class="tp-guide-sub">先点「播放」，其余随时可调</view>
+        <view class="tp-guide-sub">3 步上手，随时可调</view>
       </view>
       <view class="tp-guide-body">
         <view class="tp-guide-item">
           <text class="tp-guide-ico">▶</text>
-          <view class="tp-guide-txt"><text class="tp-guide-b">点「播放」就开始</text><text class="tp-guide-d">台词匀速上移，视线跟着参考线走</text></view>
+          <view class="tp-guide-txt"><text class="tp-guide-b">点「播放」开始</text><text class="tp-guide-d">台词匀速上移，跟着参考线看</text></view>
         </view>
         <view class="tp-guide-item">
-          <text class="tp-guide-ico">⏩</text>
-          <view class="tp-guide-txt"><text class="tp-guide-b">拖进度条跳位 / 上下滑翻页</text><text class="tp-guide-d">想跳到哪就拖到哪，也能手动翻</text></view>
+          <text class="tp-guide-ico">»</text>
+          <view class="tp-guide-txt"><text class="tp-guide-b">拖进度条跳位</text><text class="tp-guide-d">上下滑也能翻页</text></view>
         </view>
         <view class="tp-guide-item">
           <text class="tp-guide-ico">⚙</text>
-          <view class="tp-guide-txt"><text class="tp-guide-b">双击屏幕呼出菜单</text><text class="tp-guide-d">设置 / 退出都在这；控件会自动隐藏</text></view>
+          <view class="tp-guide-txt"><text class="tp-guide-b">双击屏幕唤出菜单</text><text class="tp-guide-d">控件自动隐藏，设置和退出在这</text></view>
         </view>
       </view>
       <view class="tp-guide-btn" bindtap="onCloseGuide">开始提词</view>

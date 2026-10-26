@@ -2,3 +2,4 @@ node_modules/
 .DS_Store
 project.private.config.json
 *.log
+tools/guide_fit/shots/

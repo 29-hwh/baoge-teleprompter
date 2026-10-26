@@ -465,12 +465,20 @@
 
 /* 首次使用引导
    ------------------------------------------------------------------
-   尺寸：整体按 0.85 等比缩小（500→440rpx 宽，字号 40/29/23→34/26/21）。
-   原来卡片实测约 800rpx 高，而提词页是**横屏**使用（375px 视口 = 750rpx），
-   底部「开始提词」按钮会被裁掉；所以除了缩小，还做了两道兜底：
-     ① max-height: 84vh —— 卡片永不超过视口高度；
-     ② 三段式布局：标题固定 / 步骤区可滚 / 主按钮吸底 ——
-        即使极端小屏，主操作按钮也永远在最下方可见（位置明确）。 */
+   尺寸基准改成 vmin（短边），不再用 rpx（按屏宽）——这是关键。
+   rpx 在横屏会按屏宽放大：844px 宽的横屏 1rpx≈1.125px，字号、内边距、
+   行距全部放大 2.25 倍，而可用高度只剩 390px，必然把「开始提词」挤出屏幕。
+   vmin 以短边为基准，横竖屏的物理尺寸基本恒定（竖屏时 1rpx 恰好等于
+   0.13333vmin，所以竖屏观感与原来逐像素一致）。
+
+   写法是「rpx 兜底 + vmin 覆盖」两行同一属性：万一某个低版本 WebView
+   不认 vmin，第一行仍然生效，不会退化成默认值。
+
+   另有三个约束保证任何视口都完整可见：
+     ① max-width: 80vmin —— 卡片宽度也随之收敛，宽屏不会摊大；
+     ② max-height: 88vh —— 卡片永不超过视口高度；
+     ③ 三段式布局：标题固定 / 步骤区可滚 / 主按钮吸底 ——
+        极端小屏时主按钮仍钉在最下方（位置明确），日常机型不会触发滚动。 */
 .tp-guide-mask {
   position: absolute;
   top: 0;
@@ -487,16 +495,19 @@
 }
 
 .tp-guide-card {
-  width: 68%;
-  max-width: 440rpx;
-  max-height: 84vh;
+  width: 84%;
+  max-width: 600rpx;
+  max-width: 80vmin;
+  max-height: 88vh;
   display: flex;
   flex-direction: column;
   background: rgba(44, 44, 46, 0.94);
   backdrop-filter: blur(30px);
   -webkit-backdrop-filter: blur(30px);
   border-radius: 22rpx;
-  padding: 28rpx 26rpx 24rpx;
+  border-radius: 2.93vmin;
+  padding: 26rpx 24rpx 22rpx;
+  padding: 3.47vmin 3.2vmin 2.93vmin;
   box-sizing: border-box;
 }
 
@@ -507,16 +518,21 @@
 
 .tp-guide-title {
   font-size: 34rpx;
+  font-size: 4.53vmin;
   color: #ffffff;
   font-weight: 600;
   text-align: center;
+  line-height: 1.25;
 }
 
 .tp-guide-sub {
   font-size: 22rpx;
+  font-size: 2.93vmin;
   color: rgba(235, 235, 245, 0.55);
   text-align: center;
-  margin-top: 8rpx;
+  margin-top: 6rpx;
+  margin-top: 0.8vmin;
+  line-height: 1.35;
 }
 
 /* 步骤区：内容超高时可滚（min-height:0 是 flex 子项能滚动的前提） */
@@ -525,13 +541,15 @@
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  margin-top: 22rpx;
+  margin-top: 16rpx;
+  margin-top: 2.13vmin;
 }
 
 .tp-guide-item {
   display: flex;
   align-items: flex-start;
-  margin-bottom: 20rpx;
+  margin-bottom: 14rpx;
+  margin-bottom: 1.87vmin;
 }
 
 .tp-guide-item:last-child {
@@ -539,11 +557,16 @@
 }
 
 .tp-guide-ico {
-  font-size: 32rpx;
+  font-size: 30rpx;
+  font-size: 4vmin;
   color: #7BE0AD;
-  width: 52rpx;
+  width: 46rpx;
+  width: 6.13vmin;
   flex-shrink: 0;
-  line-height: 1.35;
+  line-height: 1.2;
+  /* 与右侧主标第一行的视觉中线对齐 */
+  margin-top: 3rpx;
+  margin-top: 0.2vmin;
 }
 
 .tp-guide-txt {
@@ -555,29 +578,36 @@
 
 .tp-guide-b {
   font-size: 26rpx;
+  font-size: 3.47vmin;
   color: #ffffff;
   font-weight: 500;
   line-height: 1.35;
 }
 
 .tp-guide-d {
-  font-size: 21rpx;
+  font-size: 22rpx;
+  font-size: 2.93vmin;
   color: rgba(235, 235, 245, 0.55);
-  margin-top: 4rpx;
-  line-height: 1.45;
+  margin-top: 3rpx;
+  margin-top: 0.4vmin;
+  line-height: 1.4;
 }
 
 /* 主按钮：吸底不滚，位置永远明确 */
 .tp-guide-btn {
   flex-shrink: 0;
-  margin-top: 18rpx;
+  margin-top: 16rpx;
+  margin-top: 2.13vmin;
   background: #FFD166;
   color: #1C1C1E;
   font-size: 28rpx;
+  font-size: 3.73vmin;
   font-weight: 600;
   text-align: center;
-  padding: 20rpx 0;
+  padding: 18rpx 0;
+  padding: 2.4vmin 0;
   border-radius: 14rpx;
+  border-radius: 1.87vmin;
 }
 
 /* ============ 横屏适配（需求 3） ============ */

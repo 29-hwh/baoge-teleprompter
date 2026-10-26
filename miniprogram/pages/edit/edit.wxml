@@ -206,7 +206,9 @@
   </view>
 
   <!-- 首次使用引导（只看一次）
-       与提词页引导同一套字号层级与三段式结构：标题固定 / 步骤可滚 / 按钮吸底 -->
+       与提词页引导同一套字号层级与三段式结构：标题固定 / 步骤可滚 / 按钮吸底
+       文案原则：主标 ≤8 字讲「做什么」，说明 ≤15 字讲「怎么用」，
+                 去掉「（二选一）」这类与「或」重复的赘词 -->
   <view wx:if="{{editGuideVisible}}" class="ed-guide-mask">
     <view class="ed-guide-card">
       <view class="ed-guide-head">
@@ -216,11 +218,11 @@
       <view class="ed-guide-body">
         <view class="ed-guide-item">
           <text class="ed-guide-ico">✎</text>
-          <view class="ed-guide-txt"><text class="ed-guide-b">准备台词（二选一）</text><text class="ed-guide-d">直接写 / 粘贴；或从首页导入 Word、文本</text></view>
+          <view class="ed-guide-txt"><text class="ed-guide-b">准备台词</text><text class="ed-guide-d">直接写、粘贴，或从首页导入</text></view>
         </view>
         <view class="ed-guide-item">
           <text class="ed-guide-ico">▶</text>
-          <view class="ed-guide-txt"><text class="ed-guide-b">点「开始提词」</text><text class="ed-guide-d">写成「角色：台词」，名字自动分色</text></view>
+          <view class="ed-guide-txt"><text class="ed-guide-b">点「开始提词」</text><text class="ed-guide-d">「角色：台词」会自动分色</text></view>
         </view>
       </view>
       <view class="ed-guide-btn" bindtap="onCloseEditGuide">开始编写</view>

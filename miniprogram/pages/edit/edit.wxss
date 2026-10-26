@@ -588,9 +588,12 @@
 
 /* 首次使用引导（只看一次）
    ------------------------------------------------------------------
-   与提词页引导统一为同一套层级：标题 34 / 副标 22 / 步骤标题 26 / 说明 21 / 按钮 28。
-   同样按 0.85 等比缩小，并加 max-height 84vh + 三段式（标题固定/步骤可滚/按钮吸底），
-   小屏与分屏下都不会溢出或裁掉主按钮。 */
+   与提词页引导共用同一套层级：标题 34 / 副标 22 / 步骤标题 26 / 说明 22 / 按钮 28
+   （说明由 21 提到 22，与副标同级，10.5px 的说明字在小屏上偏糊）。
+
+   尺寸基准同样改为 vmin（短边）+ rpx 兜底，理由见 teleprompter.wxss 同名注释：
+   rpx 按屏宽换算，横屏会整体放大约 2.25 倍而被视口裁掉。
+   这里多一道 max-width: 80vmin，保证宽屏（平板 / 横屏）下卡片不会无限摊开。 */
 .ed-guide-mask {
   position: fixed;
   top: 0;
@@ -607,14 +610,17 @@
 }
 
 .ed-guide-card {
-  width: 68%;
-  max-width: 440rpx;
-  max-height: 84vh;
+  width: 84%;
+  max-width: 600rpx;
+  max-width: 80vmin;
+  max-height: 88vh;
   display: flex;
   flex-direction: column;
   background: rgba(28, 28, 30, 0.94);
   border-radius: 20rpx;
-  padding: 28rpx 26rpx 24rpx;
+  border-radius: 2.67vmin;
+  padding: 26rpx 24rpx 22rpx;
+  padding: 3.47vmin 3.2vmin 2.93vmin;
   box-sizing: border-box;
 }
 
@@ -624,6 +630,7 @@
 
 .ed-guide-title {
   font-size: 34rpx;
+  font-size: 4.53vmin;
   color: #FFD166;
   font-weight: 600;
   text-align: center;
@@ -631,9 +638,12 @@
 
 .ed-guide-sub {
   font-size: 22rpx;
+  font-size: 2.93vmin;
   color: rgba(255, 255, 255, 0.5);
   text-align: center;
-  margin-top: 8rpx;
+  margin-top: 6rpx;
+  margin-top: 0.8vmin;
+  line-height: 1.35;
 }
 
 .ed-guide-body {
@@ -641,13 +651,15 @@
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  margin-top: 22rpx;
+  margin-top: 16rpx;
+  margin-top: 2.13vmin;
 }
 
 .ed-guide-item {
   display: flex;
   align-items: flex-start;
-  margin-bottom: 20rpx;
+  margin-bottom: 14rpx;
+  margin-bottom: 1.87vmin;
 }
 
 .ed-guide-item:last-child {
@@ -655,10 +667,17 @@
 }
 
 .ed-guide-ico {
-  font-size: 32rpx;
-  width: 52rpx;
+  font-size: 30rpx;
+  font-size: 4vmin;
+  /* 原来没写 color，图标继承默认色：✎ 发白、▶ 发绿，两个图标不同色。
+     统一取本页强调色（与标题、按钮同色），图标体积小，不会抢标题的视觉重心。 */
+  color: #FFD166;
+  width: 46rpx;
+  width: 6.13vmin;
   flex-shrink: 0;
-  line-height: 1.35;
+  line-height: 1.2;
+  margin-top: 3rpx;
+  margin-top: 0.2vmin;
 }
 
 .ed-guide-txt {
@@ -670,26 +689,33 @@
 
 .ed-guide-b {
   font-size: 26rpx;
+  font-size: 3.47vmin;
   color: #ffffff;
   font-weight: 500;
   line-height: 1.35;
 }
 
 .ed-guide-d {
-  font-size: 21rpx;
+  font-size: 22rpx;
+  font-size: 2.93vmin;
   color: rgba(255, 255, 255, 0.5);
-  margin-top: 4rpx;
-  line-height: 1.45;
+  margin-top: 3rpx;
+  margin-top: 0.4vmin;
+  line-height: 1.4;
 }
 
 .ed-guide-btn {
   flex-shrink: 0;
-  margin-top: 18rpx;
+  margin-top: 16rpx;
+  margin-top: 2.13vmin;
   background: #FFD166;
   color: #1C1C1E;
   font-size: 28rpx;
+  font-size: 3.73vmin;
   font-weight: 600;
   text-align: center;
-  padding: 20rpx 0;
+  padding: 18rpx 0;
+  padding: 2.4vmin 0;
   border-radius: 14rpx;
+  border-radius: 1.87vmin;
 }
