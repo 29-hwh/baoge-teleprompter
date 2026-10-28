@@ -7,3 +7,6 @@ project.private.config.json
 # 报告按相对路径引用；若被忽略，换台机器打开就成了缺图文档。
 # 体积很小（6 张约 130KB），随代码走。
 # 重新生成：node tools/guide_fit/measure.js 375x667 --shot "tools/guide_fit/shots/p_%s.png"
+
+# 已废弃脚本（本地回收站）
+.trash/

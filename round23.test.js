@@ -132,52 +132,39 @@ function ok(name, cond, extra) {
   console.log(`${cond ? 'PASS' : 'FAIL'} | ${name}${extra ? '  -> ' + extra : ''}`)
 }
 
-console.log('=== 23-1. 单击屏幕不暂停、不闪菜单 ===')
+console.log('=== 23-1. 单击屏幕 = 播放 / 暂停（对齐浅纸）===')
 const tp = makePage(tpDef)
 pageInstanceRef = tp
 tp.onLoad({ id: SID })
 stepFrames(220)
-ok('加载后默认在播放', tp.data.playing === true && tp.engine.playing === true)
-const beforePlaying1 = tp.data.playing
-const beforeControls1 = tp.data.showControls
-tp.onTapScreen() // 仅单击一次
-// 单击应立即「什么都不做」：不放菜单、不改播放态
-ok('单击后播放态不变', tp.data.playing === beforePlaying1, `playing=${tp.data.playing}`)
-ok('单击后菜单未闪现/未切换', tp.data.showControls === beforeControls1, `showControls=${tp.data.showControls}`)
+ok('打开后待播（浅纸：点一下才开始）', tp.data.playing === false && tp.data.status === 'stopped')
+tp.onTapScreen() // 单击 → 开播
+ok('单击一次即开播（不再等 260ms 双击窗口）', tp.data.playing === true, `playing=${tp.data.playing}`)
+tp.onTapScreen() // 再点 → 暂停
+ok('再点一次立即暂停', tp.data.playing === false, `playing=${tp.data.playing}`)
 
-console.log('\n=== 23-2. 菜单「播放/暂停」按钮真实切换 ===')
-// 当前在播放 → 点一下应暂停
-tp.onTapPlay()
-ok('播放中按按钮→暂停(playing=false)', tp.data.playing === false && tp.engine.playing === false)
-ok('按钮文案变「播放」', tp.data.playing === false ? true : true) // 文案由 WXML 绑定 playing，这里仅确认状态
-// 再点一下应恢复播放
+console.log('\n=== 23-2. 菜单「播放/暂停」与实际状态同源 ===')
 tp.onTapPlay()
 ok('暂停中按按钮→恢复播放(playing=true)', tp.data.playing === true && tp.engine.playing === true)
+tp.onTapPlay()
+ok('播放中按按钮→暂停(playing=false)', tp.data.playing === false && tp.engine.playing === false)
 
-console.log('\n=== 23-3. 双击切换控制菜单 ===')
-// 先把菜单置为显示态，模拟「双击呼出后再双击收起」
-tp.setData({ showControls: true })
-// 两次快速点击（同一伪时钟时刻，间隔 0 < DOUBLE_TAP_MS）
-tp.onTapScreen()
-tp.onTapScreen()
-ok('双击后菜单收起', tp.data.showControls === false, `showControls=${tp.data.showControls}`)
-// 再双击一次 → 重新呼出
-tp.onTapScreen()
-tp.onTapScreen()
-ok('再次双击菜单重新呼出', tp.data.showControls === true, `showControls=${tp.data.showControls}`)
+console.log('\n=== 23-3. 菜单入口：右下角圆钮（双击呼出已下线）===')
+const fs = require('fs')
+const TP_WXML = fs.readFileSync('./miniprogram/pages/teleprompter/teleprompter.wxml', 'utf8')
+const TP_WXSS = fs.readFileSync('./miniprogram/pages/teleprompter/teleprompter.wxss', 'utf8')
+ok('WXML 绑定了 onOpenMenu（右下角圆钮）', /catchtap="onOpenMenu"/.test(TP_WXML))
+tp.onOpenMenu()
+ok('onOpenMenu 打开菜单', tp.data.showMenu === true && tp.data.showControls === true,
+   `showMenu=${tp.data.showMenu}`)
+tp.onCloseMenu()
+ok('onCloseMenu 关闭菜单', tp.data.showMenu === false && tp.data.showControls === false)
 
-console.log('\n=== 23-4. 横屏菜单最多占屏幕 1/5 ===')
-tp.setData({ orientation: 'landscape' })
-tp.winHeight = 375
-tp._fitMenuToScreen()
-const cap = Math.ceil(tp.winHeight * 0.2)
-ok('横屏菜单高度上限=屏幕1/5', tp.data.menuHeight <= cap + 2 && tp.data.menuHeight >= 1,
-   `menuHeight=${tp.data.menuHeight} cap=${cap}`)
-// 竖屏应明显更高（对比，确保不是误把横竖都压成 1/5）
-tp.setData({ orientation: 'portrait' })
-tp.winHeight = 667
-tp._fitMenuToScreen()
-ok('竖屏菜单高度明显高于横屏1/5', tp.data.menuHeight > cap, `portrait menuHeight=${tp.data.menuHeight}`)
+console.log('\n=== 23-4. 菜单形态：竖屏底部抽屉 / 横屏右侧半屏 ===')
+ok('竖屏面板高度 480px（浅纸 settings-container 同款）', /height:\s*480px/.test(TP_WXSS))
+ok('横屏走右侧半屏抽屉', /\.tp-sheet--land/.test(TP_WXSS) && /width:\s*50%/.test(TP_WXSS))
+ok('网格为 5 列 60px 格（repeat(auto-fit,60px)）', /repeat\(auto-fit,\s*60px\)/.test(TP_WXSS))
+ok('滑块占两行（浅纸 .slider 同款）', /\.tp-slider[\s\S]{0,40}grid-row:\s*span 2/.test(TP_WXSS))
 
 console.log('\n=== 23-5. 两种滚动方式，默认=匀速(smooth) ===')
 ok('SCROLL_STYLES 含 2 种', prefsEngine.SCROLL_STYLES.length === 2,
@@ -216,87 +203,78 @@ idx.setData({ filter: 'single' })
 idx.loadList()
 ok('单篇分区不含拆分台本', idx.data.list.every(i => !i.inFolder), `singleVisible=${idx.data.list.length}`)
 
-console.log('\n=== 23-7. 单击延迟暂停（P3-4 测试盲区补全）===')
+console.log('\n=== 23-7. 单击即时响应（不再有 260ms 延迟窗口）===')
 const tp2 = makePage(tpDef)
 pageInstanceRef = tp2
 tp2.onLoad({ id: SID })
-stepFrames(220)
-ok('加载后默认在播放', tp2.data.playing === true && tp2.engine.playing === true)
-// 单击一次：应立即不做任何事（与 23-1 一致）
+stepFrames(2)
+ok('打开后处于待播状态（浅纸：点一下才开始）', tp2.data.playing === false && tp2.data.status === 'stopped')
 tp2.onTapScreen()
-ok('单击瞬间不暂停', tp2.data.playing === true)
-// 推进伪时钟越过 DOUBLE_TAP_MS(260ms)：单击延迟判定生效 → 真正暂停
-stepFrames(20) // 20*16=320ms > 260ms
-ok('越过单击窗口后真正暂停(playing=false)', tp2.data.playing === false && tp2.engine.playing === false)
+ok('单击立即开播', tp2.data.playing === true, `playing=${tp2.data.playing}`)
+stepFrames(20) // 320ms
+ok('越过旧双击窗口后仍在播放（没有被延迟的单击翻回去）', tp2.data.playing === true)
+tp2.onTapScreen()
+ok('再点立即暂停', tp2.data.playing === false, `playing=${tp2.data.playing}`)
 
-console.log('\n=== 23-8. 双击只开关菜单，不触发单击暂停（P3-4 双保险）===')
+console.log('\n=== 23-8. 双击 = 两次单击（不再作为菜单入口）===')
 const tp3 = makePage(tpDef)
 pageInstanceRef = tp3
 tp3.onLoad({ id: SID })
-stepFrames(220)
-tp3.onTapScreen() // 第一下：起单击 timer
-tp3.onTapScreen() // 第二下（同一时刻，间隔 0 < 260ms）：判定为双击，取消单击 timer
-stepFrames(20)    // 越过窗口
-// 双击 = 呼出菜单（菜单会暂停，这是菜单语义）；关键：单击的「暂停 timer」已被取消，
-// 不会再补一次 onTapPlay 把播放态翻回去。若未取消，playing 会被翻回 true。
-ok('双击后菜单已呼出', tp3.data.showControls === true)
-ok('双击后播放态为「菜单暂停」(false)，未被单击 timer 翻回 true', tp3.data.playing === false)
+stepFrames(2)
+tp3.onTapScreen() // 第一次：开播
+tp3.onTapScreen() // 第二次：暂停
+ok('两次点击各自生效（开播→暂停）', tp3.data.playing === false)
+ok('双击不会打开菜单（菜单只走右下角圆钮）', tp3.data.showMenu === false && tp3.data.showControls === false)
 
-console.log('\n=== 23-9. 手势开始取消挂起单击，避免拖动后被暂停（P3-5）===')
+console.log('\n=== 23-9. 手势：按下暂停、拖动调位、松手续播 ===')
 const tp4 = makePage(tpDef)
 pageInstanceRef = tp4
 tp4.onLoad({ id: SID })
-stepFrames(220)
-ok('tp4 默认在播放', tp4.data.playing === true)
-tp4.onTapScreen() // 单击起 timer（不立即生效）
-// 紧接着用户开始拖动调位：onTouchStart 会 clearTimeout(_tapTimer)
+stepFrames(2)
+tp4.onTapScreen()
+ok('tp4 已在播放', tp4.data.playing === true)
+const posBefore = tp4.data.autoTop
 tp4.onTouchStart({ touches: [{ clientY: 300 }] })
-tp4.onTouchMove({ touches: [{ clientY: 290 }] })
+ok('按下即暂停（避免边拖边滚）', tp4.data.playing === false)
+tp4.onTouchMove({ touches: [{ clientY: 280 }] })
 tp4.onTouchEnd()
-ok('拖动松手后已恢复播放', tp4.data.playing === true)
-stepFrames(20) // 若单击 timer 未被取消，这里会触发一次 onTapPlay 把字幕暂停
-ok('挂起单击已被取消，越过窗口后不再被暂停', tp4.data.playing === true)
+ok('松手后恢复播放', tp4.data.playing === true)
+ok('拖动确实改变了位置', tp4.data.autoTop > posBefore, `before=${posBefore} after=${tp4.data.autoTop}`)
 
-console.log('\n=== 23-10. 真机双击（夹 touchstart/touchend）应呼出菜单（回归：此前误隐藏）===')
+console.log('\n=== 23-10. 菜单唯一入口：右下角圆钮 ===')
 const tp5 = makePage(tpDef)
 pageInstanceRef = tp5
 tp5.onLoad({ id: SID })
-stepFrames(220)
-ok('tp5 默认在播放', tp5.data.playing === true)
-// 真机每次点击前都会先触发 touchstart/end（无拖动则不设 _suppressTap），
-// 因此双击的两下之间必然夹着 onTouchStart —— 这正是此前把 _lastTapAt 清零、
-// 导致双击被误判为两次单击、菜单打不开/被误隐藏的现场。
-function realDoubleTap(page) {
-  page.onTapScreen() // 第一下：起单击窗口
-  page.onTouchStart({ touches: [{ clientY: 300 }] })
-  page.onTouchEnd()  // 无移动 → 非拖动，不抑制后续点击
-  page.onTapScreen() // 第二下：应在双击窗口内被识别为双击
-}
-realDoubleTap(tp5)
-ok('真机双击后菜单已呼出(showControls=true)', tp5.data.showControls === true, `showControls=${tp5.data.showControls}`)
-stepFrames(20) // 越过单击窗口，确认菜单没被挂起单击翻掉
-ok('越过窗口后菜单仍稳定显示', tp5.data.showControls === true)
+stepFrames(2)
+tp5.onOpenMenu()
+ok('onOpenMenu 打开菜单', tp5.data.showMenu === true && tp5.data.showControls === true)
+tp5.onCloseMenu()
+ok('onCloseMenu 关闭菜单', tp5.data.showMenu === false && tp5.data.showControls === false)
 
-console.log('\n=== 23-11. 真机双击（夹 touchstart/touchend）应收起已开菜单（回归：此前误隐藏）===')
+console.log('\n=== 23-11. 播放中开菜单再关：自动续播（不丢播放态）===')
 const tp6 = makePage(tpDef)
 pageInstanceRef = tp6
 tp6.onLoad({ id: SID })
-stepFrames(220)
-tp6.setData({ showControls: true, playing: false, _wasPlayingBeforeMenu: false })
-realDoubleTap(tp6)
-ok('真机双击后已开菜单被收起(showControls=false)', tp6.data.showControls === false, `showControls=${tp6.data.showControls}`)
-stepFrames(20) // 越过窗口，确认菜单不会因挂起单击又被错误翻出
-ok('越过窗口后菜单保持收起', tp6.data.showControls === false)
+stepFrames(2)
+tp6.onTapScreen()
+tp6.onOpenMenu()
+ok('开菜单时暂停', tp6.data.playing === false)
+tp6.onCloseMenu()
+ok('关菜单后恢复播放', tp6.data.playing === true, `playing=${tp6.data.playing}`)
 
-console.log('\n=== 23-12. 开场倒计时：进入即显示且不被菜单遮挡（回归 Issue 4）===')
+console.log('\n=== 23-12. 开场倒计时：默认关闭，开启后 3-2-1 才起播 ===')
 const tp7 = makePage(tpDef)
 pageInstanceRef = tp7
 tp7.onLoad({ id: SID })
-ok('加载后倒计时已启动(countdown=3)', tp7.data.countdown === 3, `countdown=${tp7.data.countdown}`)
-ok('倒计时期间菜单已收起(不再盖住 3-2-1)', tp7.data.showControls === false, `showControls=${tp7.data.showControls}`)
-ok('倒计时期间未开始滚动', tp7.data.playing === false)
-stepFrames(220) // 220*16=3520ms，跨过 3 秒倒计时
-ok('倒计时结束后自动开始滚动', tp7.data.playing === true && tp7.engine.playing === true)
+ok('默认不倒数（对齐浅纸 countdown=0）', tp7.data.countdown === 0, `countdown=${tp7.data.countdown}`)
+tp7._setSetting({ countdown: 3 }, 'none')
+// 回到起点：从中间续播时倒计时不触发（浅纸语义：只有从头起播才倒数）
+tp7._seekPx(0)
+tp7.onTapPlay()
+ok('开启倒计时后点播放进入 3-2-1', tp7.data.countdown === 3, `countdown=${tp7.data.countdown}`)
+ok('倒数期间未滚动', tp7.data.playing === false)
+stepFrames(220) // 3.5s
+ok('倒数结束自动开播', tp7.data.playing === true && tp7.engine.playing === true)
 ok('倒计时归零', tp7.data.countdown === 0, `countdown=${tp7.data.countdown}`)
 
 console.log('\n=== 23-13. 竖屏窄屏：长角色名不再裁切名字后的台词（回归 Issue 1）===')
@@ -306,74 +284,62 @@ const vis = (s) => { let w = 0; for (const c of (s || '')) w += /[\x00-\xff]/.te
 const CPL = Math.max(8, Math.floor((375 - 80) / (34 + 2)))
 const LONG_NAME = '婆婆（冲着门口喊）： 建华！小凤！快过来吃饭，菜都凉了'
 const parsed = parser.parseScript(LONG_NAME, { charsPerLine: CPL, roleHighlight: true, isDark: true })
-// 旧 bug：会产出「rolePrefix 非空且 body 非空、但整行宽度 > 每行字数」的超载行，
-// 被 overflow:hidden 把名字后的台词裁掉。这里断言这种超载行不再存在。
 const brokenLine = parsed.lines.find(l => l.rolePrefix && l.body && vis(l.text) > CPL)
 ok('不存在「名字+台词」挤在同一超载行的裁切现象', !brokenLine, brokenLine ? `越界行: ${brokenLine.text}` : '')
-// 名字过长时应被拆成「名字独占行(rolePrefix 有值、body 空)」，台词单独成行且不超载
 ok('超长名字已拆为名字独占行', parsed.lines.some(l => l.rolePrefix && !l.body))
 const overBody = parsed.lines.filter(l => l.body && vis(l.text) > CPL + 1)
 ok('所有台词行宽度不超载', overBody.length === 0, overBody.length ? `越界: ${overBody.map(o => o.text)}` : '')
 
-console.log('\n=== 23-14. 双击打开菜单：以最终高度一次性出现，无中央闪现（Issue 1）===')
+console.log('\n=== 23-14. 打开菜单：一次落定，无高度二次塌缩（Issue 1）===')
 const tp8 = makePage(tpDef)
 pageInstanceRef = tp8
 const events = []
 const origSet8 = tp8.setData
 tp8.setData = function (p) { events.push(Object.assign({}, p)); return origSet8.call(this, p) }
 tp8.onLoad({ id: SID })
-stepFrames(220) // 过完倒计时，菜单处于关闭态
-events.length = 0 // 只观察「双击打开菜单」这一段
-realDoubleTap(tp8)
-const showIdx = events.findIndex(e => e.showControls === true)
-ok('双击确实触发了菜单显示(setData showControls=true)', showIdx >= 0, `showIdx=${showIdx}`)
-if (showIdx >= 0) {
-  const ev = events[showIdx]
-  ok('菜单显示与最终高度同帧落定(无中间态)', typeof ev.menuHeight === 'number' && ev.menuHeight !== 620,
-     `menuHeight=${ev.menuHeight}`)
-  ok('菜单高度在合理上限内(横屏≤80)', ev.menuHeight <= 80, `menuHeight=${ev.menuHeight}`)
-}
-// 关键：显示之后不能再有「收缩高度」的二次 setData——旧实现的中央闪现正是源于
-// 先以 avail 高度出现、80ms 后再缩到自然高，让底部锚定的面板把内容从「中上部掉到底部」。
+events.length = 0
+tp8.onOpenMenu()
+const showIdx = events.findIndex(e => e.showMenu === true)
+ok('onOpenMenu 同帧写入 showMenu=true', showIdx >= 0, `showIdx=${showIdx}`)
+ok('showMenu 与 menuHeight 同帧落定（无中间态）',
+  showIdx >= 0 && typeof events[showIdx].menuHeight === 'number', `menuHeight=${showIdx>=0?events[showIdx].menuHeight:'-'}`)
 const shrinkAfter = showIdx >= 0 && events.slice(showIdx + 1).some(e => typeof e.menuHeight === 'number')
-ok('显示后无二次收缩(根除中央闪现)', shrinkAfter === false)
+ok('打开后无二次改高度（根除中央闪现）', shrinkAfter === false)
 
-console.log('\n=== 23-15. 滚动速度上限已调整为 400（回归 Issue 3）===')
-ok('prefs.SPEED_MAX = 400', prefsEngine.SPEED_MAX === 400, `SPEED_MAX=${prefsEngine.SPEED_MAX}`)
+console.log('\n=== 23-15. 速度上限：cpm 600（浅纸真值）===')
+const timeline = require('./miniprogram/engine/timeline.js')
+ok('timeline.CPM_MAX = 600', timeline.CPM_MAX === 600, `CPM_MAX=${timeline.CPM_MAX}`)
 const tp9 = makePage(tpDef)
 pageInstanceRef = tp9
 tp9.onLoad({ id: SID })
-stepFrames(220)
-tp9._applySpeed(9999) // 远超上限，应被钳到 400
-ok('超速被钳到 400', tp9.data.speed === 400, `speed=${tp9.data.speed}`)
+stepFrames(2)
+tp9._applySpeed(9999)
+ok('超速被钳到 600 字/分', tp9.data.speed === 600, `speed=${tp9.data.speed}`)
 
-console.log('\n=== 23-16. 左右留白可调为 0，不再回落成 40（Issue 2）===')
+console.log('\n=== 23-16. 台词区宽度（百分比）与左右留白联动 ===')
 const tp10 = makePage(tpDef)
 pageInstanceRef = tp10
 tp10.onLoad({ id: SID })
-stepFrames(220)
-// 用户在设置里把留白调到 0，经 app.globalData.prefs 回流到提词台
-appMock.globalData.prefs = prefsEngine.patch({ marginHorizontal: 0 })
-tp10._parseAndLayout()
-ok('留白=0 时 data.marginHorizontal 仍为 0（不被 ||40 回落成 40）',
-   tp10.data.marginHorizontal === 0, `margin=${tp10.data.marginHorizontal}`)
-// 设为新默认值 24 也应如实生效
-appMock.globalData.prefs = prefsEngine.patch({ marginHorizontal: 24 })
-tp10._parseAndLayout()
-ok('留白=24 如实生效', tp10.data.marginHorizontal === 24, `margin=${tp10.data.marginHorizontal}`)
-// 可见区宽度应随留白缩小而变大（竖屏 375 宽、字号 34、字间距 2）
-const availAt24 = Math.max(120, 375 - 24 * 2)
-ok('留白越小可用宽度越大(黑边更窄)', availAt24 > 375 - 40 * 2)
+stepFrames(2)
+tp10._setSetting({ contentWidth: 50 }, 'layout')
+ok('台词区宽度 50% 如实生效', tp10.data.contentWidth === 50, `cw=${tp10.data.contentWidth}`)
+ok('左右留白 = 屏宽 × (100−50)% ÷ 2 = 94px',
+  tp10.data.marginHorizontal === Math.round((tp10.winWidth || 375) * 0.5 / 2), `margin=${tp10.data.marginHorizontal}`)
+tp10._setSetting({ contentWidth: 100 }, 'layout')
+ok('铺满时留白为 0', tp10.data.marginHorizontal === 0, `margin=${tp10.data.marginHorizontal}`)
 
-console.log('\n=== 23-17. 设置页「左右留白」滑块实时写入偏好（Issue 2 UI）===')
-const set1 = makePage(setDef)
-set1.onShow()
-set1.onSlideMargin({ detail: { value: 8 } })
-ok('滑块调到 8 后 prefs.marginHorizontal=8', appMock.globalData.prefs.marginHorizontal === 8,
-   `margin=${appMock.globalData.prefs.marginHorizontal}`)
-set1.onSlideMargin({ detail: { value: 60 } })
-ok('滑块调到 60 后 prefs.marginHorizontal=60', appMock.globalData.prefs.marginHorizontal === 60,
-   `margin=${appMock.globalData.prefs.marginHorizontal}`)
+console.log('\n=== 23-17. 「左右留白」已并入菜单「台词区宽度」（设置页去重）===')
+// 2026-10-28：设置页那份左右留白滑块已删（两处各改一套、还不同源）。
+// 现在唯一入口是菜单的「台词区宽度」，上面 23-16 已验它能把 marginHorizontal 算对。
+{
+  const fs = require('fs')
+  const setWxml = fs.readFileSync('./miniprogram/pages/settings/settings.wxml', 'utf-8')
+  ok('设置页不再有左右留白滑块', setWxml.indexOf('onSlideMargin') < 0 && setWxml.indexOf('margin-slider') < 0)
+  const set1 = makePage(setDef)
+  if (set1.onShow) set1.onShow()
+  ok('设置页也不再暴露任何写入偏好的 handler',
+    typeof set1.onSlideMargin === 'undefined' && typeof set1.onTapFont === 'undefined')
+}
 
 console.log('\n=== 23-18. 编辑页导航栏高度按屏宽计算，标题栏不被遮挡（Issue 3）===')
 const ed = makePage(editDef)

@@ -230,16 +230,20 @@ ok('C14 开总闸后高亮保持关闭（原本就是关的）', ed2.data.roleHi
 ed2.onToggleSmartOff()
 ok('C15 关总闸后高亮恢复为「开闸前的状态」= 关', ed2.data.roleHighlight === false)
 
-// 设置页：同一份 prefs，状态必须一致
+// 2026-10-28 去重：设置页不再摆这份开关，唯一入口＝提词页 ☰ 菜单的「智能总闸 / 角色色」。
+// 因此 C16/C17 改为在菜单页验证同一份 prefs 的联动（编辑页入口已在 C13–C15 验过）。
 appMock.globalData.prefs = P.reset()
-const st = makePage(settingsDef)
-st.setData({ prefs: appMock.globalData.prefs })
-st.onToggle({ currentTarget: { dataset: { key: 'smartOff' } } })
-ok('C16 设置页开总闸：同样把高亮一并关掉',
-  st.data.prefs.smartOff === true && st.data.prefs.roleHighlight === false)
-st.onToggle({ currentTarget: { dataset: { key: 'roleHighlight' } } })
-ok('C17 设置页再点高亮：自动解除总闸（两处入口不会互相矛盾）',
-  st.data.prefs.roleHighlight === true && st.data.prefs.smartOff === false)
+const st = makePage(tpDef)
+st.setData({ smartOff: false })
+st.data.settings.roleHighlight = true
+st.onToggleSmartOff()
+ok('C16 菜单「智能总闸」开启：同样把高亮一并关掉',
+  appMock.globalData.prefs.smartOff === true && appMock.globalData.prefs.roleHighlight === false,
+  JSON.stringify(appMock.globalData.prefs))
+st.onToggleRoleHighlight()
+ok('C17 菜单里再开「角色色」：自动解除总闸（不会出现开关开着却没颜色）',
+  appMock.globalData.prefs.roleHighlight === true && appMock.globalData.prefs.smartOff === false,
+  JSON.stringify(appMock.globalData.prefs))
 
 // ---------- 汇总 ----------
 const failed = results.filter((r) => !r.pass)

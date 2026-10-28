@@ -104,58 +104,47 @@ console.log('\n═══ 3. index 页：拆分导入自动建文件夹并归组 
   ok('确认后整组删除', store.list().length === 0 && store.listFolders().length === 0)
 }
 
-console.log('\n═══ 4. 提词台：首圈开篇留空 / 回绕后恢复无缝 ═══')
+console.log('\n═══ 4. 提词台：虚拟列表裁剪（2026-10-28 恢复原有逐帧内核）═══')
 {
-  // 干净 require 捕获 Page 配置，构造最小实例测 _updateVisible
+  // 本轮把「全量渲染 + 原生动画」恢复回「虚拟列表 + ScrollEngine 逐帧」。
+  // 这里钉住新契约：短稿窗口够大则全量可见；长稿只渲染视口附近的行，
+  // 且虚拟列表不取模（首行就是第一行，不会把稿子结尾接到开头）。
   let cfg2 = null
   global.Page = (o) => { cfg2 = o }
   require('./miniprogram/pages/teleprompter/teleprompter.js')
   const p2 = { data: JSON.parse(JSON.stringify(cfg2.data)) }
   Object.keys(cfg2).forEach((k) => { if (k !== 'data' && typeof cfg2[k] === 'function') p2[k] = cfg2[k].bind(p2) })
   p2.setData = function (obj) { Object.assign(this.data, obj) }
-  const ScrollEngine = require('./miniprogram/engine/scroll.js')
-  p2.allLines = Array.from({ length: 12 }, (_, i) => ({
-    _i: i, rolePrefix: i === 0 ? '甲：' : '', body: '第' + (i + 1) + '行台词',
-    color: null, prefixColor: '#fff', bodyColor: '#fff', sectionIndex: 0, isSectionStart: i === 0
-  }))
-  p2.displayLines = p2.allLines // 不过滤时可见行 = 全部行（displayLines 为统一数据源契约）
-  p2.data.lineHeightPx = 40
-  p2.data.viewportHeight = 600
-  p2._wrapped = false
-  p2.engine = new ScrollEngine({})
-  p2.engine.loop = true
-  p2.engine.reset(0)
 
-  // offset=0（首圈开篇）：窗口起点之前的槽位应为空白占位，不得取模接上结尾
+  // 短稿：窗口（行高 40、视口 600）能放下 12 行，全量可见
+  p2.allLines = Array.from({ length: 12 }, (_, i) => ({
+    _i: i, role: null, rolePrefix: '', body: '第' + (i + 1) + '行台词',
+    color: null, prefixColor: '#fff', bodyColor: '#fff', sectionIndex: 0
+  }))
+  p2.displayLines = p2.allLines
+  p2.data.lineHeightPx = 40
+  p2.data.startPad = 0
+  p2.data.blobMode = false
+  p2.winHeight = 600
+  p2.engine = { current: 0 }
   p2._updateVisible(true)
   const v0 = p2.data.visibleLines
-  ok('首圈开篇前部为空白占位', v0.slice(0, 10).every((l) => l.isGap === true), v0.slice(0, 10).map((l) => l.isGap).join(','))
-  const real0 = v0.filter((l) => !l.isGap)
-  ok('首圈真实行从第 1 行开始（无结尾文字提前）', real0.length > 0 && real0[0].body === '第1行台词', real0[0] && real0[0].body)
+  ok('短稿（12 行）窗口够大，全部可见', v0.length === 12, 'len=' + v0.length)
+  ok('首行即台词第一行（虚拟列表不取模、不接结尾）', v0[0].body === '第1行台词', v0[0] && v0[0].body)
+  ok('末行即台词最后一行', v0[v0.length - 1].body === '第12行台词', v0[v0.length - 1].body)
 
-  // 已回绕一圈（_wrapped=true）offset 归 0：负槽位恢复取模拼接。
-  // 无缝语义 = 回绕前后的窗口内容序列一致（同一「结尾→开头」接续画面，无跳变）。
-  const loopH = 12 * 40
-  p2._wrapped = false
-  p2.engine.current = loopH // 回绕前最后一帧的窗口（offset 即将扣回一整圈）
-  p2.engine.target = loopH
-  p2.data.offset = loopH
+  // 长稿：只渲染视口附近的行，裁剪生效
+  p2.allLines = Array.from({ length: 300 }, (_, i) => ({
+    _i: i, role: null, rolePrefix: '', body: '第' + (i + 1) + '行台词',
+    color: null, prefixColor: '#fff', bodyColor: '#fff', sectionIndex: 0
+  }))
+  p2.displayLines = p2.allLines
+  p2.data.visibleStart = -1 // 强制重裁
+  p2.engine = { current: 0 }
   p2._updateVisible(true)
-  const beforeWrap = p2.data.visibleLines
-  const beforeReal = beforeWrap.filter((l) => !l.isGap)
-  ok('回绕前窗口含真实内容', beforeReal.length > 0)
-
-  p2._wrapped = true
-  p2.engine.reset(0)
-  p2._updateVisible(true)
-  const v2 = p2.data.visibleLines
-  ok('回绕后无空白占位', !v2.some((l) => l.isGap))
-  const v2Real = v2.filter((l) => !l.isGap)
-  ok(
-    '回绕前后窗口起始内容一致（无缝接续、无跳变）',
-    v2Real.length > 0 && v2Real[0].body === beforeReal[0].body,
-    v2Real[0] && v2Real[0].body + ' vs ' + beforeReal[0].body
-  )
+  const v1 = p2.data.visibleLines
+  ok('长稿只渲染视口附近的行（虚拟列表裁剪）', v1.length < 300, 'len=' + v1.length)
+  ok('裁剪窗口从第 0 行开始（不提前显示结尾）', p2.data.visibleStart === 0, 'start=' + p2.data.visibleStart)
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

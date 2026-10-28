@@ -531,6 +531,7 @@ function estimateMinutes(chars, speed) {
 module.exports = {
   NO_LINE_START,
   charWidth,
+  visualWidth,
   breakLine,
   splitSections,
   splitLongSentence,

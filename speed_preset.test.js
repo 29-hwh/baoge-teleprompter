@@ -42,8 +42,9 @@ global.getApp = () => appMock
 
 let pageDef = null
 global.Page = (def) => { pageDef = def }
+// 设置页 2026-10-28 去重后已不再提供速度档位 UI（速度唯一入口是提词页 ☰ 菜单）。
+// 这里仍 require 一次，保证页面能正常注册（require 不抛错即可）。
 require('./miniprogram/pages/settings/settings.js')
-if (!pageDef) { console.error('设置页未注册'); process.exit(1) }
 
 function makePage() {
   const inst = Object.create(pageDef)
@@ -88,11 +89,11 @@ check('新用户默认值命中「极慢」档', fresh.speed === SLOWEST.value, 
 const pFresh = makePage()
 if (pFresh.onShow) pFresh.onShow()
 pFresh.data.prefs = prefsEngine.load()
-check('设置页展示 5 个档位按钮（UI 会出现「极慢」）',
-  (pFresh.data.speedPresets || []).length === 5 && pFresh.data.speedPresets[0].label === '极慢',
-  JSON.stringify((pFresh.data.speedPresets || []).map((x) => x.label)))
-check('设置页选中态落在「极慢」',
-  pFresh.data.prefs.speed === pFresh.data.speedPresets[0].value)
+// 2026-10-28：速度档位 UI 已从设置页下线（唯一入口＝提词页 ☰ 菜单），
+// 「5 个档位按钮会不会出现」不再由设置页保证，改为钉住 prefs 层的档位数据本身。
+check('存档层仍提供 5 档（含「极慢」），供老存档迁移/时长估算使用',
+  prefsEngine.SPEED_PRESETS.length === 5 && prefsEngine.SPEED_PRESETS[0].label === '极慢',
+  JSON.stringify(prefsEngine.SPEED_PRESETS.map((x) => x.label)))
 
 console.log('\n=== [3] 老用户：升级后档位与升级前一致（无迁移） ===')
 ;[200, 140, 110, 240, 50, 333, 40, 400].forEach((old) => {
@@ -119,13 +120,11 @@ check('连续 3 次 load 结果恒为原档 140', r1 === 140 && r2 === 140 && r3
 
 console.log('\n=== [5] 手动选择「极慢」→ 持久化 + 后续会话生效 ===')
 seedOldUser(200) // 老用户原本是 200（旧默认）
-const page = makePage()
-if (page.onShow) page.onShow()
-page.data.prefs = prefsEngine.load()
-check('切换前是老档 200', page.data.prefs.speed === 200, String(page.data.prefs.speed))
-// 点「极慢」按钮（走真实处理器：_set → app.updatePrefs → prefs.patch）
-page.onTapSpeedPreset({ currentTarget: { dataset: { value: SLOWEST.value } } })
-check('点击后页面数据变为 50', page.data.prefs.speed === 50, String(page.data.prefs.speed))
+appMock.globalData.prefs = prefsEngine.load()
+check('切换前是老档 200', appMock.globalData.prefs.speed === 200, String(appMock.globalData.prefs.speed))
+// 选「极慢」：落库链路 = app.updatePrefs → prefs.patch（与菜单页写设置同一条持久化路径）
+appMock.updatePrefs({ speed: SLOWEST.value })
+check('选择后内存态变为 50', appMock.globalData.prefs.speed === 50, String(appMock.globalData.prefs.speed))
 check('已落盘（storage 里就是 50）', memStorage[KEY] && memStorage[KEY].speed === 50,
   JSON.stringify(memStorage[KEY] && memStorage[KEY].speed))
 check('内存态（app.globalData，本次会话后续页面直接读它）同步为 50',
@@ -138,35 +137,19 @@ check('生效换算：50 → 30 px/s（@行高 60px 约 2 秒一行）',
 check('选中态命中「极慢」而非其他档', reloaded.speed === SLOWEST.value)
 
 console.log('\n=== [6] 手动切回其他档仍正常（新档没把老路堵死） ===')
-page.onTapSpeedPreset({ currentTarget: { dataset: { value: 200 } } })
+appMock.updatePrefs({ speed: 200 })
 check('切回「标准 200」落盘生效', prefsEngine.load().speed === 200, String(prefsEngine.load().speed))
-page.onTapSpeedPreset({ currentTarget: { dataset: { value: 110 } } })
+appMock.updatePrefs({ speed: 110 })
 check('切到「慢速 110」落盘生效', prefsEngine.load().speed === 110, String(prefsEngine.load().speed))
 
-console.log('\n=== [7] ±20 步进：兜底不再回到旧默认 200 ===')
-seedOldUser(50)
-const pStep = makePage()
-if (pStep.onShow) pStep.onShow()
-pStep.data.prefs = prefsEngine.load()
-pStep.onTapSpeedStep({ currentTarget: { dataset: { delta: 20 } } })
-check('50 + 20 = 70', prefsEngine.load().speed === 70, String(prefsEngine.load().speed))
-pStep.onTapSpeedStep({ currentTarget: { dataset: { delta: -20 } } })
-check('70 − 20 = 50（回到极慢档）', prefsEngine.load().speed === 50, String(prefsEngine.load().speed))
-// 值缺失时的兜底：旧代码是 || 200（会莫名其妙跳到 220），现在应是 DEFAULTS.speed=50
-seedOldUser(50)
-const pFallback = makePage()
-if (pFallback.onShow) pFallback.onShow()
-pFallback.data.prefs = Object.assign({}, prefsEngine.load())
-delete pFallback.data.prefs.speed
-pFallback.onTapSpeedStep({ currentTarget: { dataset: { delta: 20 } } })
-check('speed 缺失时按默认 50 起步（不是旧默认 200 → 220）',
-  prefsEngine.load().speed === 70, String(prefsEngine.load().speed))
-
-console.log('\n=== [8] 恢复默认设置 → 回到默认档（= 极慢） ===')
+console.log('\n=== [7] 恢复默认设置 → 回到默认档（= 极慢） ===')
 seedOldUser(240)
 prefsEngine.reset()
 check('reset 后为 50（即「极慢」档）', prefsEngine.load().speed === 50, String(prefsEngine.load().speed))
-check('reset 后的值命中「极慢」按钮', prefsEngine.load().speed === SLOWEST.value)
+check('reset 后的值命中「极慢」档', prefsEngine.load().speed === SLOWEST.value)
+
+// 说明：「±20 步进」这个交互随设置页速度面板一起下线（2026-10-28 去重），
+// 对应的兜底回归用例一并移除——留着只会测一段已经不存在的代码。
 
 console.log('\n==================== 汇总 ====================')
 console.log('断言：通过 ' + pass + ' / 失败 ' + fail)

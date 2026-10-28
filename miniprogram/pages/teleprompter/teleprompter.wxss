@@ -1,646 +1,849 @@
-.tp-page {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-}
+/* ==========================================================================
+   提词页样式（对齐「浅纸提词器」）
+   - 台词区：全量渲染，黑色底，左右 16px 内边距，行高由 JS 注入
+   - 菜单：浅灰 #eee + 5 列 60px 网格 + 竖滑块（浅纸同款）
+   ========================================================================== */
 
-/* 菜单/遮罩显隐：用 visibility + pointer-events 切换，而非 wx:if 插拔。
-   元素始终在 DOM 中保持布局，打开时首帧就直接落在最终位置，
-   根除「先插入到屏幕中上部闪一下、再被定位到底部」的底层渲染抖动（双击菜单闪现 bug）。 */
-.tp-hidden {
-  visibility: hidden;
-  pointer-events: none;
-  opacity: 0;
-}
-
-.tp-viewport {
-  position: absolute;
-  top: 0;
+.tp-root {
+  position: fixed;
   left: 0;
   right: 0;
+  top: 0;
   bottom: 0;
   overflow: hidden;
+  z-index: 1;
+}
+
+.tp-stage {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  transform-origin: center center;
+}
+
+/* 镜像：一张矩阵搞定，两个容器同时翻 */
+.tp-mirror {
+  transform: matrix(-1, 0, 0, 1, 0, 0);
+}
+
+/* ── 单 transform 容器 + 虚拟列表（原有逐帧滚动内核） ── */
+.tp-viewport {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+  z-index: 1;
 }
 
 .tp-content {
+  width: 100%;
+  box-sizing: border-box;
   will-change: transform;
-  padding-top: 40vh;
+}
+
+.tp-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── 台词排版 ── */
+.tp-pad {
+  width: 100%;
+  pointer-events: none;
+}
+
+.tp-lines {
+  /* 宽度由 .tp-line 撑满，配合 inline marginHorizontal 控制台词区宽度 */
 }
 
 .tp-line {
-  white-space: nowrap;
-  /* 不要裁切行内文字：解析器已保证每行字数不超预算，仅「行尾标点」会多占 1 字宽（避头尾规则），
-     若用 overflow:hidden 会把名字/台词最后一个字裁掉（竖屏窄屏尤其明显）。改为 visible，
-     多出的 1 字落在左右留白内，内容完整可见。 */
+  width: 100%;
+  box-sizing: border-box;
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  /* 折叠时盒子自动长高，行与行不可能重叠 */
   overflow: visible;
 }
 
+/* 对齐两档（居中 / 左对齐）。
+   作用在块级 .tp-line 上，内部内联角色名与正文一起对齐。
+   行盒用 min-height 而不是 height：万一某行被 CSS 折成两行，盒子会自己长高、
+   把下一行往下推，绝不会压在一起（老版本写死 height，折行就直接叠字）。 */
+.tp-align-left { text-align: left; }
+.tp-align-center { text-align: center; }
+
+/* 角色名：内联彩色，与正文同一行（原有实现） */
 .tp-role {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .tp-body {
-  font-weight: 400;
+  white-space: pre-wrap;
+  word-break: break-word;
+  transition: opacity 0.18s ease;
 }
 
-/* 视线参考线 */
-.tp-guide {
-  position: absolute;
-  top: 50%;
+/* 超长稿降级：整篇合成 1 个纯文本块，保留换行 */
+.tp-blob-line {
+  white-space: pre-wrap;
+  overflow: visible;
+}
+
+.tp-blob {
+  white-space: pre-wrap;
+}
+
+/* 聚焦模式：只留当前行前后一行 */
+.tp-dim {
+  opacity: 0.28;
+}
+
+/* ── 指示线 ── */
+.tp-cue {
+  position: fixed;
   left: 0;
   right: 0;
-  height: 1px;
-  background: rgba(142, 142, 147, 0.5);
+  height: 0;
+  border-top: 1px dashed rgba(255, 82, 82, 0.45);
+  z-index: 10;
   pointer-events: none;
 }
 
-/* 电影字幕式上下渐隐遮罩：让匀速滚动的字幕在入/出屏处柔和淡出，呈现「片尾字幕」质感。
-   渐变色由 wxml 内联写入（顶部=背景色→透明，底部=透明→背景色），随主题色自适应；
-   这里只负责定位与穿透点击，绝不能拦截台词区的单击/双击。 */
-.tp-fade {
+.tp-cue-dot {
   position: absolute;
+  left: 6px;
+  top: -4px;
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid rgba(255, 82, 82, 0.75);
+}
+
+/* ── 读到底辉光 ── */
+.tp-end-glow {
+  position: fixed;
   left: 0;
   right: 0;
-  height: 16%;
-  z-index: 8;
+  bottom: -40px;
+  height: 20px;
+  box-shadow: 0 -20px 80px 20px rgba(255, 0, 0, 0.53);
+  opacity: 0;
+  transition: opacity 0.3s ease;
   pointer-events: none;
+  z-index: 5;
 }
 
-.tp-fade--top {
-  top: 0;
+.tp-end-glow--on {
+  opacity: 1;
 }
 
-.tp-fade--bottom {
-  bottom: 0;
-}
-
-/* 进度条（可拖动定位）：底部常驻细条，播放时也能随时拖动定位 */
-.tp-progress-wrap {
-  position: absolute;
+/* ── 时钟 ── */
+.tp-clock {
+  position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
-  height: 56rpx;
-  display: flex;
-  align-items: center;
-  padding: 0 24rpx;
-  background: rgba(28, 28, 30, 0.6);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
   z-index: 20;
 }
 
-.tp-slider {
-  margin: 0;
-  width: 100%;
-}
-
-/* 声控指示 */
-.tp-voice {
-  position: absolute;
-  top: 96rpx;
-  left: 24rpx;
-  width: 220rpx;
-  padding: 16rpx 20rpx;
-  border-radius: 18rpx;
-  background: rgba(28, 28, 30, 0.55);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
-
-.tp-voice-label {
-  font-size: 22rpx;
-  color: #7BE0AD;
-  margin-bottom: 10rpx;
-  font-weight: 500;
-}
-
-.tp-voice-track {
-  height: 8rpx;
-  background: rgba(142, 142, 147, 0.4);
-  border-radius: 999rpx;
-  overflow: hidden;
-}
-
-.tp-voice-fill {
-  height: 100%;
-  background: #7BE0AD;
-  transition: width 80ms linear;
-}
-
-.tp-voice-tip {
-  font-size: 20rpx;
-  color: rgba(235, 235, 245, 0.6);
-  margin-top: 8rpx;
-}
-
-/* 倒计时 */
-.tp-countdown {
-  position: absolute;
+/* ── 右侧竖条进度 ── */
+.tp-progress {
+  position: fixed;
+  right: 0;
   top: 0;
-  left: 0;
+  bottom: 0;
+  width: 14px;
+  z-index: 30;
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0) 0,
+    rgba(0, 0, 0, 0) 11px,
+    rgba(255, 255, 255, 0.14) 11px,
+    rgba(255, 255, 255, 0.14) 14px
+  );
+}
+
+.tp-progress-fill {
+  position: absolute;
   right: 0;
   bottom: 0;
-  z-index: 40; /* 高于菜单(26)/顶栏(30)/遮罩(25)，倒计时期间必定整体可见 */
+  width: 3px;
+  background: #ff5252;
+  border-radius: 2px;
+  transition: height 0.18s linear;
+}
+
+/* ── 右下角圆钮 ── */
+.tp-fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(253, 61, 61, 0.3);
+  border: 1px solid rgba(253, 61, 61, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  z-index: 100;
+}
+
+.tp-fab:active {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.tp-fab-icon {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 17px;
+  line-height: 1;
+}
+
+/* ── 倒计时 ── */
+.tp-countdown {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.86);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
 }
 
 .tp-countdown-num {
-  font-size: 200rpx;
-  color: #FFD166;
-  font-weight: 600;
+  font-size: 96px;
+  font-weight: 200;
+  color: #ffffff;
+  line-height: 1;
 }
 
-/* 顶部栏（毛玻璃） */
-.tp-topbar {
-  position: absolute;
-  top: 0;
+.tp-countdown-tip {
+  margin-top: 12px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  letter-spacing: 2px;
+}
+
+/* ==========================================================================
+   菜单（浅灰网格，形态对齐浅纸 settings-panel）
+   ========================================================================== */
+
+.tp-mask {
+  position: fixed;
   left: 0;
   right: 0;
-  z-index: 30; /* 菜单遮罩(25)之上，返回/设置始终可点 */
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 28rpx 24rpx;
-  background: rgba(28, 28, 30, 0.5);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
-}
-
-.tp-title {
-  flex: 1;
-  text-align: center;
-  font-size: 30rpx;
-  font-weight: 500;
-  color: #ffffff;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tp-icon {
-  font-size: 28rpx;
-  font-weight: 500;
-  color: #FFD166;
-  padding: 8rpx 16rpx;
-}
-
-/* Req 2：播放中（未暂停）顶栏按键降到 10% 透明度，避免抢视线；暂停后恢复全亮 */
-.tp-icon.tp-dim {
-  opacity: 0.1;
-}
-
-.tp-icon {
-  transition: opacity 0.2s ease;
-}
-
-/* 台本位置角标（第 N / 共 M） */
-.tp-pos {
-  font-size: 24rpx;
-  font-weight: 500;
-  color: rgba(235, 235, 245, 0.7);
-  padding: 6rpx 18rpx;
-  border-radius: 999rpx;
-  background: rgba(118, 118, 128, 0.32);
-  margin-left: 12rpx;
-}
-
-/* 菜单遮罩：半透明区域，点它关闭菜单（需求 4） */
-.tp-controls-mask {
-  position: absolute;
   top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+  z-index: 300;
+}
+
+.tp-mask--on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tp-sheet {
+  position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 25;
+  height: 480px;
+  max-height: 84vh;
+  background: #efefef;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateY(102%);
+  transition: transform 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
+  z-index: 310;
 }
 
-/* 底部控制条（毛玻璃面板） */
-.tp-controls {
+.tp-sheet--open {
+  transform: translateY(0);
+}
+
+/* 横屏：右侧抽屉，半屏宽（浅纸 landscape 布局） */
+.tp-sheet--land {
+  left: auto;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  transform: translateX(102%);
+  box-shadow: -5px 2px 10px rgba(200, 200, 200, 0.5);
+}
+
+.tp-sheet--land.tp-sheet--open {
+  transform: translateX(0);
+}
+
+.tp-sheet-head {
+  flex: none;
+  height: 40px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #e9e9e9;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  box-sizing: border-box;
+}
+
+/* 横屏：抽屉贴在屏幕右侧，微信右上角的「··· ⊙」胶囊正好压在抽屉头部 ——
+ * 老版本「切竖屏 / 退出 / ×」三个按钮全被胶囊盖住，点不到也看不见。
+ * 处理：整个头部右让 112px（胶囊宽约 87 + 边距），工具组靠左排。 */
+.tp-sheet-head--land {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: 112px;
+  height: calc(40px + env(safe-area-inset-top, 0px));
+  justify-content: flex-start;
+}
+
+/* 横屏时把标题让给按钮：半屏宽里塞不下「提词设置·横屏 + 三个按钮」 */
+.tp-sheet-head--land .tp-sheet-title {
+  display: none;
+}
+
+.tp-sheet-head--land .tp-sheet-tools {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.tp-sheet-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.55);
+  letter-spacing: 0.5px;
+}
+
+.tp-sheet-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.tp-head-btn {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.62);
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.07);
+  margin-right: 8px;
+}
+
+.tp-head-close {
+  width: 26px;
+  height: 26px;
+  line-height: 24px;
+  text-align: center;
+  font-size: 18px;
+  color: rgba(0, 0, 0, 0.4);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.tp-sheet-body {
+  flex: 1;
+  /* flex 子项的默认 min-height 是 auto —— iOS(WKWebView) 会让它撑到内容全高，
+     被外层 overflow:hidden 裁掉且不产生滚动，菜单后半截（镜像/循环/聚焦/倒计时）就永远调不到。
+     必须显式写 min-height:0 才会收缩成真正的滚动窗口。 */
+  min-height: 0;
+  background: #eeeeee;
+}
+
+/* 网格：浅纸原值 —— 60px 格 / 12px 间距 / auto-fit 居中（手机 4 列，窄屏 3 列）
+ * 加 max-width：避免 iPad 上摊成 8–10 列，控件被拉得过散 */
+.tp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, 60px);
+  grid-auto-rows: 60px;
+  grid-auto-flow: row dense;
+  grid-gap: 12px 12px;
+  justify-content: center;
+  align-items: start;
+  padding: 16px;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.tp-cell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #dddddd;
+  border-radius: 16px;
+  overflow: hidden;
+  text-align: center;
+}
+
+/* 竖滑块占两行（浅纸 .slider 同款） */
+.tp-slider {
+  grid-row: span 2;
+}
+
+/* 宽控件占两列 */
+.tp-wide {
+  grid-column: span 2;
+}
+
+/* 拉通整行：用于最后一个控件，避免末尾留半行空洞（用 1/-1 兼容 3–5 列） */
+.tp-full {
+  grid-column: 1 / -1;
+}
+
+.tp-cell-label {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 56rpx;
-  z-index: 26; /* 在遮罩(25)之上，按钮可点；catchtap 吸收面板内点击不外溢 */
-  padding: 28rpx 28rpx calc(28rpx + env(safe-area-inset-bottom));
-  background: rgba(28, 28, 30, 0.62);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
-  border-top: 1rpx solid rgba(255, 255, 255, 0.08);
-  border-top-left-radius: 28rpx;
-  border-top-right-radius: 28rpx;
-}
-
-/* 菜单内容滚动区：内容超高时上下滑动看全所有功能 */
-.tp-menu-scroll {
-  width: 100%;
-}
-
-/* 菜单内容包裹层：JS 用它实测内容自然高，决定菜单贴内容高还是限高滚动 */
-.tp-menu-inner {
-  width: 100%;
-}
-
-/* 横屏菜单：最多占屏幕 1/5（需求 4），
-   这里只收紧留白与字号——横屏 rpx 按屏幕宽度换算会整体放大，
-   实际高度上限由 JS 按 winHeight * 20% 写进内联 style（menuHeight） */
-.tp-controls--landscape {
-  padding: 14rpx 20rpx calc(14rpx + env(safe-area-inset-bottom));
-  bottom: 20rpx;
-}
-
-.tp-controls--landscape .tp-row {
-  margin-bottom: 8rpx;
-}
-
-.tp-controls--landscape .tp-btn {
-  padding: 8rpx 18rpx;
-  font-size: 22rpx;
-  margin-right: 12rpx;
-  margin-bottom: 4rpx;
-}
-
-.tp-controls--landscape .tp-step {
-  padding: 8rpx 16rpx;
-  font-size: 22rpx;
-}
-
-.tp-controls--landscape .tp-theme-chip {
-  padding: 10rpx 0;
-  font-size: 20rpx;
-}
-
-.tp-controls--landscape .tp-hint {
-  font-size: 18rpx;
-  margin-top: 6rpx;
-}
-
-.tp-controls--landscape .tp-mini {
-  font-size: 20rpx;
-}
-
-/* 横屏：菜单最多占屏幕 1/5，所以行距/内边距全部再压一档，
-   让同样高度里能塞进更多行，少滚动 */
-.tp-controls--landscape .tp-menu-inner {
-  padding-bottom: 4rpx;
-}
-
-.tp-controls--landscape .tp-row {
-  margin-bottom: 4rpx;
-}
-
-.tp-controls--landscape .tp-btn {
-  padding: 6rpx 14rpx;
-  font-size: 20rpx;
-  margin-right: 8rpx;
-  margin-bottom: 2rpx;
-  border-radius: 999rpx;
-}
-
-.tp-controls--landscape .tp-step-val {
-  font-size: 20rpx;
-  padding: 0 10rpx;
-  min-width: 48rpx;
-}
-
-.tp-controls--landscape .tp-speed-slider {
-  height: 28rpx;
-  margin: 0 10rpx;
-}
-
-.tp-controls--landscape .tp-hint {
-  font-size: 16rpx;
-  margin-top: 4rpx;
-}
-
-/* 滚动方式分段选择：两个紧凑小按钮（第三档「逐段」已下架） */
-.tp-style-row {
-  flex-wrap: nowrap;
-}
-
-.tp-seg {
-  border-radius: 999rpx;
-  padding: 8rpx 20rpx;
-  font-size: 24rpx;
-}
-
-.tp-controls--landscape .tp-seg {
-  padding: 6rpx 16rpx;
-  font-size: 20rpx;
-  margin-right: 8rpx;
-}
-
-.tp-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-bottom: 18rpx;
-}
-
-.tp-row:last-child {
-  margin-bottom: 0;
-}
-
-.tp-btn {
-  padding: 14rpx 30rpx;
-  margin-right: 16rpx;
-  margin-bottom: 8rpx;
-  border-radius: 999rpx;
-  font-size: 27rpx;
-  font-weight: 500;
-  color: #ffffff;
-  background: rgba(118, 118, 128, 0.32);
-}
-
-.tp-btn.primary {
-  background: #FFD166;
-  color: #1C1C1E;
-}
-
-.tp-btn.on {
-  background: #34C759;
-  color: #ffffff;
-}
-
-/* 切换台本的上/下一个按钮：到边界置灰、不可点（明确不循环） */
-.tp-btn.is-disabled {
-  background: rgba(118, 118, 128, 0.12);
-  color: rgba(235, 235, 245, 0.3);
+  bottom: 6px;
+  font-size: 8px;
+  line-height: 1.2;
+  color: rgba(0, 0, 0, 0.42);
   pointer-events: none;
 }
 
-.tp-btn.tiny-btn {
-  background: transparent;
-  color: rgba(235, 235, 245, 0.6);
-  padding-left: 0;
-}
-
-.tp-stepper {
-  display: flex;
-  align-items: center;
-  margin-right: 16rpx;
-  margin-bottom: 8rpx;
-  background: rgba(118, 118, 128, 0.32);
-  border-radius: 999rpx;
-  overflow: hidden;
-}
-
-.tp-step {
-  padding: 14rpx 26rpx;
-  font-size: 27rpx;
-  font-weight: 500;
-  color: #ffffff;
-}
-
-.tp-step-val {
-  padding: 0 18rpx;
-  font-size: 26rpx;
-  color: #FFD166;
-  min-width: 64rpx;
-  text-align: center;
-}
-
-/* 速度滑块行 */
-.tp-speed-row {
-  align-items: center;
-}
-
-.tp-mini {
-  font-size: 24rpx;
-  color: rgba(235, 235, 245, 0.7);
-  flex-shrink: 0;
-}
-
-.tp-mini-val {
-  min-width: 72rpx;
-  text-align: center;
-  color: #FFD166;
-}
-
-.tp-speed-slider {
-  flex: 1;
-  margin: 0 20rpx;
-}
-
-/* 三个文字/背景预设（一键配色） */
-.tp-theme-row {
-  justify-content: space-between;
-}
-
-.tp-theme-chip {
-  flex: 1;
-  margin-right: 16rpx;
-  padding: 18rpx 0;
-  text-align: center;
-  border-radius: 16rpx;
-  border: 2rpx solid transparent;
-  font-size: 24rpx;
-  font-weight: 600;
-  box-sizing: border-box;
-}
-
-.tp-theme-chip:last-child {
-  margin-right: 0;
-}
-
-.tp-finished {
-  font-size: 25rpx;
-  color: #7BE0AD;
-  margin-top: 10rpx;
-}
-
-.tp-hint {
-  font-size: 21rpx;
-  color: rgba(235, 235, 245, 0.4);
-  margin-top: 10rpx;
-}
-
-/* 首次使用引导
-   ------------------------------------------------------------------
-   尺寸基准改成 vmin（短边），不再用 rpx（按屏宽）——这是关键。
-   rpx 在横屏会按屏宽放大：844px 宽的横屏 1rpx≈1.125px，字号、内边距、
-   行距全部放大 2.25 倍，而可用高度只剩 390px，必然把「开始提词」挤出屏幕。
-   vmin 以短边为基准，横竖屏的物理尺寸基本恒定（竖屏时 1rpx 恰好等于
-   0.13333vmin，所以竖屏观感与原来逐像素一致）。
-
-   写法是「rpx 兜底 + vmin 覆盖」两行同一属性：万一某个低版本 WebView
-   不认 vmin，第一行仍然生效，不会退化成默认值。
-
-   另有三个约束保证任何视口都完整可见：
-     ① max-width: 80vmin —— 卡片宽度也随之收敛，宽屏不会摊大；
-     ② max-height: 88vh —— 卡片永不超过视口高度；
-     ③ 三段式布局：标题固定 / 步骤区可滚 / 主按钮吸底 ——
-        极端小屏时主按钮仍钉在最下方（位置明确），日常机型不会触发滚动。 */
-.tp-guide-mask {
+.tp-cell-val {
   position: absolute;
-  top: 0;
   left: 0;
   right: 0;
+  top: 5px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #333333;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.tp-unit {
+  font-size: 7px;
+  opacity: 0.55;
+  margin-left: 1px;
+}
+
+/* 可点的数值：继承了 .tp-cell-val 的 pointer-events:none，这里要放开。
+   z-index 必须高于 .tp-vhit（2），否则会被命中区盖住、点了变成拖滑块。 */
+.tp-val-tap {
+  pointer-events: auto;
+  z-index: 3;
+  color: #c62828;
+  font-weight: 600;
+}
+
+/* 竖滑块 */
+/* 命中区：只覆盖轨道上下这一段，不抢「数值区」的点击
+   （数值区要留给「切单位 / 切显隐」，整格 catchtouchstart 会把它吃掉） */
+.tp-vhit {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 20px;
+  bottom: 18px;
+  z-index: 2;
+}
+
+.tp-vtrack {
+  position: absolute;
+  left: 50%;
+  top: 26px;
+  bottom: 22px;
+  width: 4px;
+  margin-left: -2px;
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 2px;
+}
+
+.tp-vfill {
+  position: absolute;
+  left: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  width: 100%;
+  background: #ff5252;
+  border-radius: 2px;
+}
+
+.tp-vthumb {
+  position: absolute;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-bottom: -7px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* 横向滑块 */
+.tp-hslider .tp-htrack {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 42%;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 2px;
+}
+
+.tp-hfill {
+  height: 100%;
+  background: #ff5252;
+  border-radius: 2px;
+}
+
+.tp-hthumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* 色块 */
+.tp-color {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.tp-swatch {
+  width: 20px;
+  height: 20px;
+  margin-top: 9px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+/* 配色格：文字色 + 背景色两枚并排（替代原来的两个独立格） */
+.tp-color-dual .tp-swatch {
+  margin-top: 8px;
+}
+
+.tp-swatch-bg {
+  margin-left: 6px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+
+/* 分段按钮（对齐方式）：两档等宽平铺，字号 10px 不会被裁 */
+.tp-seg-cell {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 60;
-}
-
-.tp-guide-card {
-  width: 84%;
-  max-width: 600rpx;
-  max-width: 80vmin;
-  max-height: 88vh;
-  display: flex;
-  flex-direction: column;
-  background: rgba(44, 44, 46, 0.94);
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
-  border-radius: 22rpx;
-  border-radius: 2.93vmin;
-  padding: 26rpx 24rpx 22rpx;
-  padding: 3.47vmin 3.2vmin 2.93vmin;
+  padding-bottom: 12px;
   box-sizing: border-box;
 }
 
-/* 标题区：不参与滚动，始终在卡片顶部 */
+.tp-seg-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.tp-seg {
+  flex: 1 1 0;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1;
+  padding: 6px 0;
+  margin: 0 3px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.07);
+  color: rgba(0, 0, 0, 0.45);
+  text-align: center;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.tp-seg.is-on {
+  background: #ff5252;
+  color: #ffffff;
+}
+
+/* 开关 */
+.tp-switch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tp-dot {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  margin-top: 11px;
+  border-radius: 50%;
+  /* #ddd 底上 0.1 的黑几乎看不见，提到 0.22 才能一眼认出「这是个开关」 */
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+  transition: background 0.18s ease;
+}
+
+.tp-dot.is-on {
+  background: #ff5252;
+}
+
+.tp-dot.is-on::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 9px;
+  width: 8px;
+  height: 4px;
+  border-left: 2px solid #ffffff;
+  border-bottom: 2px solid #ffffff;
+  transform: rotate(-45deg);
+}
+
+/* 颜色告警条 */
+.tp-warn {
+  display: flex;
+  align-items: center;
+  margin: 12px 16px 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 152, 0, 0.15);
+  color: #b25e00;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.tp-warn-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  border-radius: 50%;
+  background: #ff9800;
+  color: #ffffff;
+  font-size: 10px;
+  margin-right: 6px;
+}
+
+/* 底部操作 */
+.tp-sheet-foot {
+  display: flex;
+  justify-content: center;
+  padding: 4px 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
+}
+
+.tp-foot-btn {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.62);
+  padding: 8px 18px;
+  margin: 0 6px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.07);
+}
+
+/* 调色盘 */
+.tp-palette {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 56px;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 10px 12px 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+  z-index: 5;
+}
+
+.tp-palette-title {
+  font-size: 10px;
+  color: rgba(0, 0, 0, 0.4);
+  margin-bottom: 8px;
+}
+
+/* 托盘里第二、三段标题拉开距离 */
+.tp-palette-title--gap {
+  margin-top: 10px;
+}
+
+.tp-palette-row {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+/* 托盘里的主题胶囊按内容宽度排，不参与平铺 */
+.tp-palette .tp-seg {
+  flex: none;
+  padding: 6px 12px;
+}
+
+.tp-palette-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  margin: 4px 8px 4px 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.tp-palette-dot.is-on {
+  box-shadow: 0 0 0 2px #ff5252;
+}
+
+/* ── 引导（三段式：标题不滚 / 步骤可滚 / 按钮吸底）──
+ * 尺寸一律「rpx 兜底 + vmin 覆盖」：rpx 按屏宽换算，横屏宽屏下会整体放大 2 倍，
+ * 只剩半屏高度时按钮会被挤出视口。vmin 取宽高较小值，横竖屏视觉体量一致。
+ */
+.tp-guide-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 400;
+}
+
+.tp-guide-card {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 82%;
+  max-width: 320px;
+  max-width: 80vmin;
+  max-height: 88vh;
+  background: #1c1c1e;
+  border-radius: 16px;
+  padding: 22px 20px 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
 .tp-guide-head {
   flex-shrink: 0;
 }
 
 .tp-guide-title {
-  font-size: 34rpx;
-  font-size: 4.53vmin;
+  font-size: 32rpx;
+  font-size: 5.2vmin;
   color: #ffffff;
   font-weight: 600;
-  text-align: center;
-  line-height: 1.25;
 }
 
 .tp-guide-sub {
+  margin-top: 6px;
+  margin-bottom: 10px;
   font-size: 22rpx;
-  font-size: 2.93vmin;
-  color: rgba(235, 235, 245, 0.55);
-  text-align: center;
-  margin-top: 6rpx;
-  margin-top: 0.8vmin;
-  line-height: 1.35;
+  font-size: 3.3vmin;
+  color: rgba(255, 255, 255, 0.48);
 }
 
-/* 步骤区：内容超高时可滚（min-height:0 是 flex 子项能滚动的前提） */
 .tp-guide-body {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  margin-top: 16rpx;
-  margin-top: 2.13vmin;
 }
 
 .tp-guide-item {
   display: flex;
   align-items: flex-start;
-  margin-bottom: 14rpx;
-  margin-bottom: 1.87vmin;
-}
-
-.tp-guide-item:last-child {
-  margin-bottom: 0;
-}
-
-/* 步骤序号徽标：直径沿用原图标列宽（46rpx / 6.13vmin），横向占位与改动前完全一致。
-   描边刻意用 px 而不是 rpx —— 1px 细描边不该随屏幕放大，横屏时 rpx 会把它撑成一条粗边。
-   line-height 比 height 少 2px，是因为上下各 1px 边框在 box-sizing:border-box 下会吃掉内容高度，
-   不减的话数字会整体下沉 1px，与右侧主标的中线对不齐。 */
-.tp-guide-num {
-  width: 46rpx;
-  width: 6.13vmin;
-  height: 46rpx;
-  height: 6.13vmin;
-  flex-shrink: 0;
-  box-sizing: border-box;
-  border: 1px solid rgba(123, 224, 173, 0.45);
-  border-radius: 50%;
-  background: rgba(123, 224, 173, 0.14);
-  color: #7BE0AD;
-  font-size: 22rpx;
-  font-size: 2.93vmin;
-  line-height: 44rpx;
-  line-height: 5.9vmin;
-  text-align: center;
-  /* 与右侧主标第一行的视觉中线对齐（徽标比原图标高，故略微上提） */
-  margin-top: -2rpx;
-  margin-top: -0.27vmin;
+  margin-bottom: 10px;
 }
 
 .tp-guide-txt {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+}
+
+.tp-guide-num {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  text-align: center;
+  border-radius: 50%;
+  background: rgba(255, 82, 82, 0.22);
+  color: #ff8a8a;
+  font-size: 22rpx;
+  font-size: 3.2vmin;
+  margin-right: 10px;
+  margin-top: 2px;
 }
 
 .tp-guide-b {
   font-size: 26rpx;
-  font-size: 3.47vmin;
+  font-size: 3.9vmin;
   color: #ffffff;
-  font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.45;
 }
 
 .tp-guide-d {
-  font-size: 22rpx;
-  font-size: 2.93vmin;
-  color: rgba(235, 235, 245, 0.55);
-  margin-top: 3rpx;
-  margin-top: 0.4vmin;
-  line-height: 1.4;
+  margin-top: 3px;
+  font-size: 23rpx;
+  font-size: 3.3vmin;
+  color: rgba(255, 255, 255, 0.58);
+  line-height: 1.45;
 }
 
-/* 主按钮：吸底不滚，位置永远明确 */
 .tp-guide-btn {
   flex-shrink: 0;
-  margin-top: 16rpx;
-  margin-top: 2.13vmin;
-  background: #FFD166;
-  color: #1C1C1E;
-  font-size: 28rpx;
-  font-size: 3.73vmin;
-  font-weight: 600;
+  margin-top: 6px;
+  height: 44px;
+  line-height: 44px;
   text-align: center;
-  padding: 18rpx 0;
-  padding: 2.4vmin 0;
-  border-radius: 14rpx;
-  border-radius: 1.87vmin;
+  border-radius: 12px;
+  background: #ff5252;
+  color: #ffffff;
+  font-size: 28rpx;
+  font-size: 4.2vmin;
 }
 
-/* ============ 横屏适配（需求 3） ============ */
+/* 矮视口（横屏小手机 / 分屏）：收紧内边距与间距，保证三条步骤 + 按钮全在视口内 */
+@media (max-height: 400px) {
+  .tp-guide-card {
+    padding: 14px 16px 12px;
+  }
 
-/* 顶栏的返回/设置：横屏缩小 */
-.tp-topbar.tp-land .tp-icon {
-  font-size: 22rpx;
-  padding: 6rpx 12rpx;
+  .tp-guide-sub {
+    margin-bottom: 8px;
+  }
+
+  .tp-guide-item {
+    margin-bottom: 8px;
+  }
+
+  .tp-guide-btn {
+    margin-top: 4px;
+    height: 40px;
+    line-height: 40px;
+  }
 }
-
-.tp-topbar.tp-land .tp-title {
-  font-size: 26rpx;
-}
-
-/* 底部进度条：横屏缩小高度，并约 50% 透明 */
-.tp-progress-wrap.tp-land {
-  height: 34rpx;
-  opacity: 0.5;
-  padding: 0 16rpx;
-}
-
-/* 注：按角色筛选的旧菜单样式（.tp-role-filter-row / .tp-role-chips / .tp-role-chip）
-   已随「滚动页菜单角色选择板块」下架——筛选改由编辑页「角色显示选择」配置驱动，
-   提词页不再有对应 DOM，故整块样式删除，不留死代码。 */

@@ -1,86 +1,145 @@
-<view class="container">
-  <view class="row-between header">
-    <view>
-      <view class="page-title">我的台本</view>
-      <view class="tiny">台本不限条数，长按可删除</view>
+<!--
+  首页 · 我的台本
+  ──────────────────────────────────────────────────────────────
+  布局原则（移动优先，信息密度优先）：
+    1) 顶栏只放「标题 + 一句话概况 + 设置」，不再用两行大按钮占半屏；
+    2) 主操作压成一行双按钮并吸顶 —— 滚到哪儿都能新建 / 导入；
+    3) 分区改成横滑 chip，带数量，空列表时整行不出现；
+    4) 台本卡片单击进编辑，右侧「提词」药丸一步直达提词页（不用再穿编辑页）；
+    5) 页脚常驻但压成一行，少占 40rpx 屏高。
+-->
+<view class="idx">
+
+  <!-- ── 顶栏 ── -->
+  <view class="idx-head">
+    <view class="idx-head-main">
+      <view class="idx-title">我的台本</view>
+      <view class="idx-sub">{{totalCount}} 篇 · {{folderCount}} 个文件夹</view>
     </view>
-    <view class="icon-btn" bindtap="onTapSettings">设置</view>
+    <view class="idx-gear" hover-class="btn-hover" bindtap="onTapSettings">⚙</view>
   </view>
 
-  <!-- 主操作区：新建 / 导入 常驻页面顶部，滚动时吸顶，随时可取 -->
-  <view class="action-bar">
-    <view class="btn btn-primary btn-block" bindtap="onTapNew">新建台本</view>
-    <view class="btn btn-block btn-import" bindtap="onTapImport">导入 txt / word</view>
+  <!-- ── 主操作：吸顶，一行两个（空态时由空态区自己承接 CTA，不重复）── -->
+  <view wx:if="{{totalCount > 0}}" class="idx-actions">
+    <view class="idx-act idx-act--primary" hover-class="btn-hover" bindtap="onTapNew">
+      <view class="idx-act-ico idx-act-ico--plus"></view>
+      <text>新建台本</text>
+    </view>
+    <view class="idx-act" hover-class="btn-hover" bindtap="onTapImport">
+      <view class="idx-act-ico idx-act-ico--down"></view>
+      <text>导入文档</text>
+    </view>
   </view>
 
-  <!-- 分区切换：全部 / 拆分台本(Word 拆分导入归入文件夹) / 单篇台本 -->
-  <view class="filter-bar">
-    <view class="filter-tab {{filter === 'all' ? 'on' : ''}}" data-key="all" bindtap="onSwitchFilter">全部</view>
-    <view class="filter-tab {{filter === 'split' ? 'on' : ''}}" data-key="split" bindtap="onSwitchFilter">拆分台本{{splitCount ? ' ' + splitCount : ''}}</view>
-    <view class="filter-tab {{filter === 'single' ? 'on' : ''}}" data-key="single" bindtap="onSwitchFilter">单篇{{singleCount ? ' ' + singleCount : ''}}</view>
+  <!-- ── 分区 chip：全部 / 拆分台本 / 单篇（有台本才显示，分区空时仍可切回全部）── -->
+  <scroll-view wx:if="{{totalCount > 0}}" class="idx-tabs" scroll-x enhanced show-scrollbar="{{false}}">
+    <view class="idx-tab {{filter === 'all' ? 'on' : ''}}" data-key="all" bindtap="onSwitchFilter">
+      全部<text class="idx-tab-n">{{totalCount}}</text>
+    </view>
+    <view class="idx-tab {{filter === 'split' ? 'on' : ''}}" data-key="split" bindtap="onSwitchFilter">
+      拆分台本<text class="idx-tab-n">{{splitCount}}</text>
+    </view>
+    <view class="idx-tab {{filter === 'single' ? 'on' : ''}}" data-key="single" bindtap="onSwitchFilter">
+      单篇<text class="idx-tab-n">{{singleCount}}</text>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{storageTip}}" class="idx-tip">{{storageTip}}</view>
+
+  <!-- ── 空态 ── -->
+  <view wx:if="{{empty}}" class="idx-empty">
+    <view class="idx-empty-mark">
+      <view class="idx-empty-line"></view>
+      <view class="idx-empty-line idx-empty-line--short"></view>
+      <view class="idx-empty-line"></view>
+    </view>
+    <view class="idx-empty-title">{{totalCount ? '这个分区还没有台本' : '还没有台本'}}</view>
+    <view class="idx-empty-sub">粘贴一段台词自己排，或从聊天记录导入 txt / docx</view>
+    <view class="idx-empty-acts">
+      <view class="idx-empty-btn idx-empty-btn--primary" hover-class="btn-hover" bindtap="onTapNew">新建台本</view>
+      <view class="idx-empty-btn" hover-class="btn-hover" bindtap="onTapImport">导入文档</view>
+    </view>
   </view>
 
-  <view wx:if="{{storageTip}}" class="tip-bar">{{storageTip}}</view>
+  <!-- ── 列表 ── -->
+  <view wx:if="{{!empty}}" class="idx-list">
+    <block wx:for="{{list}}" wx:key="id" wx:for-item="item">
 
-  <view wx:if="{{empty}}" class="empty">
-    <view class="empty-title">还没有台本</view>
-    <view class="tiny">粘贴一段文字，或从聊天记录导入 txt / word</view>
-  </view>
-
-  <!-- 文件夹标题卡：点一下改名，长按删除整组（含组内台本） -->
-  <block wx:for="{{list}}" wx:key="id" wx:for-item="item">
-    <view
-      wx:if="{{item.kind === 'folder'}}"
-      class="folder-head {{item.collapsed ? 'is-collapsed' : ''}}"
-      data-fid="{{item.fid}}"
-      data-name="{{item.name}}"
-      data-count="{{item.count}}"
-      bindtap="onTapFolder"
-      bindlongpress="onLongPressFolder"
-      hover-class="btn-hover"
-    >
-      <view class="row-between">
-        <view class="folder-title">📁 {{item.name}}</view>
-        <view class="row folder-right">
-          <text class="folder-count">{{item.count}} 篇</text>
-          <view class="folder-arrow" catchtap="onToggleFolder" data-fid="{{item.fid}}">{{item.collapsed ? '▸' : '▾'}}</view>
+      <!-- 文件夹头：点标题改名 / 点箭头展开收起 / 长按删整组 -->
+      <view
+        wx:if="{{item.kind === 'folder'}}"
+        class="idx-folder {{item.collapsed ? 'is-collapsed' : ''}}"
+        data-fid="{{item.fid}}"
+        data-name="{{item.name}}"
+        data-count="{{item.count}}"
+        bindtap="onTapFolder"
+        bindlongpress="onLongPressFolder"
+        hover-class="btn-hover"
+      >
+        <view class="idx-folder-bar"></view>
+        <view class="idx-folder-main">
+          <view class="idx-folder-row">
+            <view class="idx-folder-name">{{item.name}}</view>
+            <view class="idx-folder-right">
+              <text class="idx-folder-count">{{item.count}} 篇</text>
+              <view
+                class="idx-folder-arrow {{item.collapsed ? 'is-folded' : ''}}"
+                catchtap="onToggleFolder"
+                data-fid="{{item.fid}}"
+              ></view>
+            </view>
+          </view>
+          <view class="idx-folder-meta">
+            <text>{{item.collapsed ? '已收起' : item.updatedText}}</text>
+            <text class="idx-folder-hint">点名字改名 · 长按删整组</text>
+          </view>
         </view>
       </view>
-      <view class="row-between script-meta folder-meta">
-        <text class="tiny">{{item.collapsed ? '已收起 · 点箭头展开' : '点按改名 · 长按删除整组'}}</text>
-        <text class="tiny">{{item.updatedText}}</text>
-      </view>
-    </view>
 
-    <!-- 台本卡（文件夹内的与独立的都走这里） -->
-    <view
-      wx:if="{{item.kind === 'script'}}"
-      class="card script-item {{item.inFolder ? 'in-folder' : ''}}"
-      data-id="{{item.id}}"
-      data-title="{{item.title}}"
-      bindtap="onTapItem"
-      bindlongpress="onLongPress"
-      hover-class="btn-hover"
-    >
-      <view class="row-between">
-        <view class="script-title">{{item.title}}</view>
-        <view wx:if="{{item.roleCount > 0}}" class="badge role-badge">{{item.roleCount}} 角色</view>
+      <!-- 台本卡：点卡片进编辑，点「提词」直达提词页 -->
+      <view
+        wx:if="{{item.kind === 'script'}}"
+        class="idx-card {{item.inFolder ? 'in-folder' : ''}}"
+        data-id="{{item.id}}"
+        data-title="{{item.title}}"
+        bindtap="onTapItem"
+        bindlongpress="onLongPress"
+        hover-class="btn-hover"
+      >
+        <view class="idx-card-top">
+          <view class="idx-card-title">{{item.title}}</view>
+          <view wx:if="{{item.roleCount > 0}}" class="idx-chip-role">{{item.roleCount}} 角色</view>
+        </view>
+        <view class="idx-card-preview">{{item.preview || '（空白台本）'}}</view>
+        <view class="idx-card-meta">
+          <view class="idx-card-stats">
+            <text>{{item.chars}} 字</text>
+            <text class="idx-dot">·</text>
+            <text>{{item.updatedText}}</text>
+          </view>
+          <view
+            class="idx-play"
+            data-id="{{item.id}}"
+            catchtap="onTapPrompt"
+            hover-class="btn-hover"
+          >
+            <view class="idx-play-ico"></view>
+            <text>提词</text>
+          </view>
+        </view>
       </view>
-      <view class="script-preview">{{item.preview || '（空白台本）'}}</view>
-      <view class="row-between script-meta">
-        <text class="tiny">{{item.chars}} 字</text>
-        <text class="tiny">{{item.updatedText}}</text>
-      </view>
-    </view>
-  </block>
+    </block>
 
-  <!-- 文件夹重命名弹窗 -->
-  <view wx:if="{{folderRenameVisible}}" class="rename-mask" bindtap="onFolderRenameCancel">
-    <view class="rename-card" catchtap="noop">
-      <view class="rename-title">文件夹命名</view>
+    <view class="idx-list-foot">长按台本可删除 · 本机保存，不上传云端</view>
+  </view>
+
+  <!-- ── 文件夹重命名弹窗 ── -->
+  <view wx:if="{{folderRenameVisible}}" class="idx-mask" bindtap="onFolderRenameCancel">
+    <view class="idx-dialog" catchtap="noop">
+      <view class="idx-dialog-title">文件夹命名</view>
       <input
-        class="rename-input"
-        placeholder-class="ed-ph"
+        class="idx-dialog-input"
+        placeholder-class="idx-ph"
         value="{{folderRenameName}}"
         maxlength="30"
         placeholder="给文件夹起个名字"
@@ -88,24 +147,19 @@
         bindinput="onFolderNameInput"
         bindconfirm="onFolderRenameOk"
       />
-      <view class="row-between rename-btns">
-        <view class="btn btn-ghost rename-btn" bindtap="onFolderRenameCancel">取消</view>
-        <view class="btn btn-primary rename-btn" bindtap="onFolderRenameOk">确定</view>
+      <view class="idx-dialog-btns">
+        <view class="idx-dialog-btn" bindtap="onFolderRenameCancel">取消</view>
+        <view class="idx-dialog-btn idx-dialog-btn--primary" bindtap="onFolderRenameOk">确定</view>
       </view>
     </view>
   </view>
 
-  <!-- 页脚：固定显示应用版本号，并附版权与更新日期（信息完整、不遮挡内容） -->
-  <view class="app-footer">
-    <view class="footer-main">
-      <text class="footer-ver">{{version}}</text>
-      <text class="footer-sep">·</text>
-      <text class="footer-tag">免费 · 台本不限条数</text>
-    </view>
-    <view class="footer-sub">
-      <text>{{footerCopyright}}</text>
-      <text class="footer-dot">·</text>
-      <text>{{footerUpdate}}</text>
-    </view>
+  <!-- ── 页脚：版本号常驻，压成一行 ── -->
+  <view class="idx-foot">
+    <text class="idx-foot-ver">{{version}}</text>
+    <text class="idx-foot-sep">·</text>
+    <text class="idx-foot-txt">{{footerCopyright}}</text>
+    <text class="idx-foot-sep">·</text>
+    <text class="idx-foot-txt">{{footerUpdate}}</text>
   </view>
 </view>

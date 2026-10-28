@@ -77,7 +77,9 @@ class ScrollEngine {
     this.lineHeight = lineHeight || 40
     this.totalHeight = totalHeight || 0
     this.viewportHeight = viewportHeight || 0
-    this.pxPerSecond = pxPerSecond || 30
+    // 速度 0 是合法值（滑块拖到最慢 = 停住），不能被 `|| 30` 兜成 30 悄悄跑起来
+    this.pxPerSecond =
+      typeof pxPerSecond === 'number' && pxPerSecond >= 0 ? pxPerSecond : 30
     // 视线参考线相对「内容首行基线」的偏移(px)：台本结束的唯一定义是
     // 「最后一行文字滚过此线」。由控制器按布局实测传入
     // （.tp-content padding-top:40vh → 首行基线在 40% 屏高；.tp-guide 在 50%，
@@ -96,7 +98,7 @@ class ScrollEngine {
   }
 
   setSpeed(pxPerSecond) {
-    this.pxPerSecond = pxPerSecond || 0
+    this.pxPerSecond = typeof pxPerSecond === 'number' && pxPerSecond >= 0 ? pxPerSecond : 0
   }
 
   /** 可滚动的最大距离。

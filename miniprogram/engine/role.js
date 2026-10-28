@@ -15,6 +15,7 @@
  */
 const ROLE_PATTERNS = [
   { type: 'bracket', re: /^【([^【】]{1,8})】\s*/ }, // 【林晚】
+  { type: 'bracketFull', re: /^［([^［］]{1,8})］\s*/ }, // ［林晚］全角方括号（中文输入法下按 [ 常出全角）
   { type: 'square', re: /^\[([^[\]]{1,12})\]\s*/ }, // [Tom]
   { type: 'parenFull', re: /^（([^（）]{1,8})）\s*/ }, // （旁白）
   { type: 'parenHalf', re: /^\(([^()]{1,12})\)\s*/ }, // (Tom)

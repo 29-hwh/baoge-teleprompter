@@ -14,6 +14,8 @@ Page({
     storageTip: '',
     // 分区入口：all 全部 / split 拆分台本（Word 拆分导入生成的）/ single 单篇台本
     filter: 'all',
+    // totalCount = 全部台本数（不受分区影响）：顶栏概况与「全部」chip 都用它
+    totalCount: 0,
     folderCount: 0,
     splitCount: 0,
     singleCount: 0,
@@ -114,6 +116,7 @@ Page({
     this.setData({
       list: visible,
       empty: visible.length === 0,
+      totalCount: raw.length,
       folderCount: folderCount,
       splitCount: splitParts.length,
       singleCount: singleCards.length,
@@ -302,6 +305,16 @@ Page({
   onTapItem(e) {
     const id = e.currentTarget.dataset.id
     wx.navigateTo({ url: '/pages/edit/edit?id=' + id })
+  },
+
+  /**
+   * 卡片右下「提词」药丸：跳过编辑页，直接进提词台。
+   * 打开提词器的真实目的多半是「马上要读了」，少一次跳转就少一次等待。
+   */
+  onTapPrompt(e) {
+    const id = e.currentTarget.dataset.id
+    if (!id) return
+    wx.navigateTo({ url: '/pages/teleprompter/teleprompter?id=' + id })
   },
 
   /** 点文件夹标题：弹出重命名输入框 */

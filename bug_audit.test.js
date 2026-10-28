@@ -174,77 +174,85 @@ console.log('\n══════ 3. 已暂停时点击屏幕唤出控制栏，�
   )
 }
 
-console.log('\n══════ 4. 倒计时设为「关闭」时，复盘统计是否未初始化（时长天文数字） ══════')
+console.log('\n══════ 4. 倒计时关闭：点一下播放，统计是否从 0 起算 ══════')
 {
+  // 新契约（对齐浅纸）：进入提词页不自动播，单击屏幕才开始 —— 必须先 onTapPlay。
   appMock.globalData.prefs = prefsEngine.patch({ countdown: 0, loop: false })
-  const text = Array.from({ length: 20 }, (_, i) => `第${i + 1}行台词内容，足够长以产生滚动`).join('\n')
+  const text = Array.from({ length: 40 }, (_, i) => `第${i + 1}行台词内容，足够长以产生滚动`).join('\n')
   const s = store.create('倒计时关闭', text)
   store.save(s)
   const page = makePage()
   page.onLoad({ id: s.id })
   page.onReady()
-  stepFrames(1500) // 滚到底
+  page.onTapPlay()
+  stepFrames(60)
+  const started = page.stats && page.stats.startTs > 0
+  stepFrames(1500)
   const snap = page.stats.snapshot()
-  const rd = page.data.reviewData
-  const durText = rd ? rd.duration : '(未弹复盘)'
-  // 根因：_startCountdown 在 countdown<=0 时调 _startScroll() 不带 isNew，
-  // 于是 stats.reset()/onStart() 都没执行，startTs 停留在 0。
-  const notInitialized = page.stats.startTs === 0
-  const insane = snap.durationMs > 24 * 3600 * 1000 // 超过 1 天即异常
+  const insane = snap.durationMs > 6 * 3600 * 1000 // 超过 6 小时即视为时间戳差值失控
   bug(
-    '倒计时=关闭时 stats 未初始化(startTs=0)，复盘时长=时间戳差值（天文数字）',
-    notInitialized || insane,
-    `startTs=${page.stats.startTs}（未 onStart）、durationMs=${snap.durationMs}` +
-    `（≈${(snap.durationMs / 86400000).toFixed(0)} 天）→ 复盘弹窗时长显示「${durText}」；` +
+    '点播放后统计未初始化，阅读时长算出天文数字',
+    !started || insane,
+    `startTs=${page.stats.startTs}、durationMs=${snap.durationMs}、` +
     `rolledLines=${snap.rolledLines}/totalLines=${snap.totalLines}`
   )
   appMock.globalData.prefs = prefsEngine.patch({ countdown: 3, loop: true })
 }
 
-console.log('\n══════ 5. 中途切后台再回来并读完：复盘弹窗是否还能弹出 ══════')
+console.log('\n══════ 5. 中途切后台再回来：位置不丢、不自动播、能继续读完 ══════')
 {
-  // 用默认 countdown=3，保证 stats 被正常初始化（否则会被 bug4 掩盖）
-  appMock.globalData.prefs = prefsEngine.patch({ countdown: 3, loop: false })
-  const text = Array.from({ length: 20 }, (_, i) => `第${i + 1}行台词内容，足够长以产生滚动`).join('\n')
+  // 新契约：切后台只暂停并落盘位置；回前台不弹窗、不自动播（用户自己决定何时继续）
+  appMock.globalData.prefs = prefsEngine.patch({ countdown: 0, loop: false })
+  const text = Array.from({ length: 40 }, (_, i) => `第${i + 1}行台词内容，足够长以产生滚动`).join('\n')
   const s = store.create('切后台', text)
   store.save(s)
   const page = makePage()
   page.onLoad({ id: s.id })
   page.onReady()
-  stepFrames(400) // 倒计时 3s + 正常滚动一段时间（activeMs 需 >800 才会落库）
-  page.onHide() // 切后台
-  const savedAfterHide = page._statSaved
-  page.onShow() // 回前台，弹「继续提词吗」→ 选继续
-  stepFrames(1500) // 读完
-  const okState = page.data.finished === true && page.data.reviewVisible === undefined
+  page.onTapPlay()
+  stepFrames(120)
+  page.onHide() // 切后台（内部会按已播时长反算位置）
+  const before = page.engine.current
+  page.onShow()
+  stepFrames(3)
+  const after = page.engine.current
   bug(
-    'onHide 后回来自然读完，正常进入结束态且无复盘弹窗',
-    !okState,
-    `finished=${page.data.finished}；reviewVisible=${page.data.reviewVisible}`
+    '切后台回来位置丢失或自动开播',
+    !(before > 0 && Math.abs(after - before) < 2 && page.data.playing === false),
+    `切走时 offset=${before.toFixed(1)}、回来后 offset=${after.toFixed(1)}、playing=${page.data.playing}`
+  )
+  // 继续点一下，应当从原位置接着滚（原生动画期间逻辑层拿不到实时位置，
+  // 所以再切一次后台把位置反算出来做比较）
+  page.onTapPlay()
+  stepFrames(600)
+  page.onHide()
+  const advanced = page.engine.current
+  bug(
+    '回前台继续播放后位置没有前进',
+    !(advanced > after + 20),
+    `继续前 offset=${after.toFixed(1)}、继续后 offset=${advanced.toFixed(1)}`
   )
   appMock.globalData.prefs = prefsEngine.patch({ countdown: 3, loop: true })
 }
 
-console.log('\n══════ 6. 切后台回来点「从头开始」：是否只回到开头却不播放 ══════')
+console.log('\n══════ 6. 「从头开始」：是否真的回到开头并立刻开播 ══════')
 {
   appMock.globalData.prefs = prefsEngine.patch({ countdown: 0, loop: false })
-  const text = Array.from({ length: 20 }, (_, i) => `第${i + 1}行台词内容，足够长以产生滚动`).join('\n')
+  const text = Array.from({ length: 40 }, (_, i) => `第${i + 1}行台词内容，足够长以产生滚动`).join('\n')
   const s = store.create('从头开始', text)
   store.save(s)
   const page = makePage()
   page.onLoad({ id: s.id })
   page.onReady()
+  page.onTapPlay()
   stepFrames(200)
-  page.onHide()
-  MODAL_RESULT = { confirm: false } // 点「从头开始」
-  page.onShow()
+  page.onTapRestart()
   stepFrames(3)
   bug(
-    '切后台回来点「从头开始」只 seek 到 0 但不开始播放，界面卡住',
-    page.data.playing === false && page.engine.current < 1,
-    `点「从头开始」后 playing=${page.data.playing}、offset=${page.engine.current.toFixed(1)}（按钮语义是重新开始，应自动开播）`
+    '点「从头开始」只回到开头却不播放',
+    !(page.data.playing === true && page.engine.current < 5),
+    `playing=${page.data.playing}、offset=${page.engine.current.toFixed(1)}（按钮语义是重新开始，应自动开播）`
   )
-  MODAL_RESULT = { confirm: true }
   appMock.globalData.prefs = prefsEngine.patch({ countdown: 3, loop: true })
 }
 
@@ -286,3 +294,5 @@ console.log(`\n${'═'.repeat(60)}`)
 console.log(`审计完成：共检查 ${results.length} 项，确认 ${bugs.length} 个 bug`)
 bugs.forEach((b, i) => console.log(`  ${i + 1}. ${b.name}`))
 console.log('═'.repeat(60))
+// 有 bug 就以非 0 退出：否则全量跑测试时这套会被当成"绿"，确认的问题被静默吞掉。
+if (bugs.length) process.exitCode = 1

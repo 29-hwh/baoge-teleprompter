@@ -125,12 +125,16 @@ const ED_WXML = fs.readFileSync(path.join(__dirname, 'miniprogram/pages/edit/edi
 const SET_WXML = fs.readFileSync(path.join(__dirname, 'miniprogram/pages/settings/settings.wxml'), 'utf-8')
 
 console.log('=== 27-1. 纯净显示模式：只留台词 + 进度条 ===')
-ok('顶栏已改为跟随 showControls（不再按横竖屏区分）',
-  /wx:if="\{\{showControls\}\}"\s+class="tp-topbar/.test(TP_WXML))
+// 2026-10-27 改造：提词页对齐浅纸「全屏纯净」——顶栏整块删除，
+// 屏幕上只剩台词、右侧进度条、右下角菜单钮、视线指示线。
+// 旧断言要求的「顶栏跟随 showControls 显隐」已不适用，改为锁定「顶栏确实不存在」。
+ok('顶栏已整块移除（纯净模式不再有顶部状态条）',
+  TP_WXML.indexOf('class="tp-topbar') < 0 && TP_WXML.indexOf('tp-topbar') < 0)
 ok('常驻设置浮钮已从 WXML 移除', TP_WXML.indexOf('tp-float-settings') < 0)
 ok('常驻设置浮钮样式已从 WXSS 移除', TP_WXSS.indexOf('tp-float-settings') < 0)
-ok('声控条跟随 showControls 显隐',
-  /wx:if="\{\{voiceEnabled && showControls\}\}"\s+class="tp-voice"/.test(TP_WXML))
+// 声控在 v1 由菜单开关驱动（vad.js 检测到人声才滚动），不再有独立的声控状态条
+ok('提词页无独立声控条（声控走菜单开关，不占屏幕）',
+  TP_WXML.indexOf('class="tp-voice') < 0 && TP_WXSS.indexOf('.tp-voice {') < 0)
 
 // 进度条：横竖屏都常驻 —— 该 view 上不得再出现任何 wx:if
 const progressLineIdx = TP_WXML.indexOf('class="tp-progress-wrap')
@@ -138,8 +142,12 @@ const progressLineStart = TP_WXML.lastIndexOf('<view', progressLineIdx)
 const progressTag = TP_WXML.slice(progressLineStart, TP_WXML.indexOf('>', progressLineIdx) + 1)
 ok('进度条横竖屏都常驻（无 wx:if 隐藏条件）', progressTag.indexOf('wx:if') < 0,
   progressTag.replace(/\s+/g, ' ').slice(0, 90))
-ok('菜单底部提供「设置 / 退出」出口（横竖屏一致的唯一出口）',
-  /bindtap="onTapSettings">设置</.test(TP_WXML) && /bindtap="onTapBack">退出</.test(TP_WXML))
+// 出口收敛：设置全部收进菜单，唯二出口是「退出提词页」与关闭菜单
+ok('菜单头部提供唯一退出出口（点它回首页）',
+  /catchtap="onTapBack">退出</.test(TP_WXML) && /onTapBack\s*\(\s*\)\s*\{[\s\S]{0,80}navigateBack/.test(
+    fs.readFileSync(path.join(__dirname, 'miniprogram/pages/teleprompter/teleprompter.js'), 'utf-8')))
+ok('不再有指向独立设置页的入口（设置已内嵌菜单）',
+  TP_WXML.indexOf('onTapSettings') < 0)
 ok('横屏专属「设置/退出」重复入口已移除（不再按 orientation 分支）',
   TP_WXML.indexOf("wx:if=\"{{orientation === 'landscape'}}\" class=\"tp-row\"") < 0)
 ok('引导文案不再指向已删除的「右上浮钮」', TP_WXML.indexOf('右上浮钮') < 0)
@@ -199,7 +207,9 @@ ok('折叠行常显当前状态（roleDisplaySummary）', ED_WXML.indexOf('roleD
 ok('风险说明存在（漏词警示）',
   ED_WXML.indexOf('role-risk') >= 0 && ED_WXML.indexOf('可能漏词') >= 0)
 ok('面板内提供「一键关闭智能功能」开关', ED_WXML.indexOf('onToggleSmartOff') >= 0)
-ok('设置页有同源开关（两处状态不会互相矛盾）', SET_WXML.indexOf('data-key="smartOff"') >= 0)
+// 2026-10-28 口径变更：设置页去重后不再重复摆一份智能总闸（唯一真源＝提词页菜单，
+// 编辑页角色面板里的同名开关是"就地兜底"，与菜单读写同一份 prefs.smartOff）。
+ok('设置页不再重复提供智能总闸（消除双入口）', SET_WXML.indexOf('data-key="smartOff"') < 0)
 ok('旧的冗余长说明已移除（信息密度下降）', ED_WXML.indexOf('role-display-hint') < 0)
 ok('旧的一级标题样式已移除（不再与主操作同级）',
   fs.readFileSync(path.join(__dirname, 'miniprogram/pages/edit/edit.wxss'), 'utf-8').indexOf('.role-display-title') < 0)

@@ -1,100 +1,162 @@
+/**
+ * 提词页（恢复宝哥原有逐帧滚动内核 + 对齐「浅纸提词器」菜单/设置）
+ * ============================================================================
+ * 滚动方式（2026-10-28 恢复原有实现）：
+ *   旧版曾用「setInterval(16ms) 逐帧推进 + 虚拟列表裁剪」，中途被改成
+ *   「this.animate() 一条动画跑到底 + 全量渲染」，真机出现卡顿、横竖屏切换
+ *   失效。本轮恢复原有 ScrollEngine 逐帧内核，同时保留浅纸的菜单/设置体系。
+ *
+ * 渲染哲学（恢复后）：
+ *   - 单一 transform 容器，transform: translate3d(0, -offset, 0)
+ *   - ScrollEngine（engine/scroll.js）setInterval(16ms) 逐帧推进，
+ *     每帧只 setData offset 数字 + 百分比节流 + 每 8 帧裁剪一次可见区
+ *   - 虚拟列表：只渲染视口附近的行，长稿不卡
+ *   - 角色名内联渲染（rolePrefix + body 同一行），行高等高，裁剪干净
+ *
+ * 速度体系：
+ *   cpm（字/分钟，默认 200）与 px（旧标尺 0–50）双单位，统一折算成 msPerPx，
+ *   再由 msPerPx 折算 pxPerSecond 喂给 ScrollEngine。
+ */
 const app = getApp()
 const store = require('../../engine/store.js')
 const parser = require('../../engine/parser.js')
 const roleEngine = require('../../engine/role.js')
+const settingsEngine = require('../../engine/settings.js')
+const timeline = require('../../engine/timeline.js')
 const prefsEngine = require('../../engine/prefs.js')
 const ScrollEngine = require('../../engine/scroll.js')
 const StatsCollector = require('../../engine/stats.js')
 const vad = require('../../engine/vad.js')
 const util = require('../../utils/util.js')
 
-/**
- * 速度换算：speed(40-400) -> px/s。
- * 上限 400（约 4 行/秒 @ 行高 60px），过快字幕会糊成一片影响可读。
- */
-function pxPerSecondOf(speed) {
-  return Math.max(24, (speed || 50) * 0.6)
+/** 菜单里滑块的几何缓存键 */
+const SLIDER_KEYS = ['vs-speed', 'vs-fontSize', 'vs-lineHeight', 'vs-letterSpacing', 'vs-cuePosition']
+const HSLIDER_KEYS = ['hs-contentWidth', 'hs-countdown']
+
+/** 布局节流：拖动字号时不必每 16ms 重新分词排版 */
+const LAYOUT_THROTTLE_MS = 90
+
+function pct(v, min, max) {
+  if (!(max > min)) return 0
+  const n = (Number(v) - min) / (max - min)
+  return Math.max(0, Math.min(100, n * 100))
 }
 
-/** 双击判定窗口：单击暂停要等这个窗口确认没有第二下 */
-const DOUBLE_TAP_MS = 260
-/** 菜单自动收起时间：避免横屏下菜单长期遮挡台词（需求 1） */
-const MENU_AUTO_HIDE_MS = 6000
+function hexToRgba(hex, alpha) {
+  const rgb = settingsEngine.colorToRgb(hex)
+  if (!rgb) return 'rgba(255,255,255,0.18)'
+  return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`
+}
 
 Page({
   data: {
     title: '',
-    statusBarHeight: 20,
-    // 右上角胶囊（关闭/更多）下方的安全起始 y。自定义导航栏下胶囊依然存在且无法隐藏，
-    // 顶栏与浮层必须从它下面开始排，否则竖屏会跟「退出小程序」按钮叠在一起（需求 1）。
-    navSafeTop: 64,
-
-    // 渲染
-    visibleLines: [],
-    visibleStart: 0,
-    offset: 0,
-    lineHeightPx: 60,
-    fontSizePx: 34,
-    letterSpacing: 2,
-    contentHeight: 0,
-    viewportHeight: 600,
-    bg: '#000000',
-    textColor: '#FFFFFF',
-    isDark: true,
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif",
-    // 角色高亮开关（只给名字上色，台词保持正文色）。
-    // 2026-10-27 起「名字+台词」整行高亮已下线，页面不再需要 roleHighlightMode。
-    roleHighlight: true,
-    mirror: false,
-    showGuide: true,
-    marginHorizontal: 40,
-
-    // 横竖屏与滚动模式
-    orientation: 'landscape',
-    scrollMode: 'auto',
-    // 两种滚动方式：smooth 匀速自动滚动(默认) / voice 声控跟读
-    scrollStyle: 'smooth',
-    scrollStyleOptions: [],
-    // 控制菜单内容区高度(px)：打开菜单后按自然高与可用高实测写入，
-    // 内容超高时可上下滑动看全；横屏最多占屏幕 1/5
-    menuHeight: 620,
-
-    // 状态
-    playing: false,
-    showControls: false,
-    settingsOpen: false,
-    speed: 50, // 与 prefs.DEFAULTS.speed 保持一致
-    progress: 0,
-    progressText: '0%',
-    progressValue: 0,
-    loop: false,
-    countdown: 0,
-    finished: false,
-
-    // 控制菜单里的快捷设置（需求 5 / 11）
-    speedMin: 40,
-    speedMax: 400,
-    themePresets: [],
-    colorScheme: 'white-on-black',
-    // 当前台本在全部台本中的位置，如「3 / 12」（需求 10）
     scriptPosText: '',
-    // 「上一个 / 下一个台本」是否可点：false 时按钮置灰，
-    // 避免「按钮亮着但点了只弹一句提示」的假可点状态
     hasPrevScript: false,
     hasNextScript: false,
 
-    // 声控
+    // ── 排版 ──
+    lines: [], // 全量台词（保留供测试/旧调用方读）
+    visibleLines: [], // 虚拟列表裁剪后的可见窗口（渲染用它）
+    visibleStart: 0,
+    visibleTop: 0, // 可见窗口在整篇文本坐标系里的顶部 y（切片定位用）
+    fontSizePx: 45,
+    lineHeightPx: 81,
+    letterSpacing: 0,
+    contentWidth: 100,
+    textAlign: 'left',
+    fontFamily: '',
+    fontFamilyLabel: '系统',
+    fontBold: false,
+    marginHorizontal: 0,
+    bg: '#000000',
+    textColor: '#FFFFFF',
+    isDark: true,
+    mirror: false,
+    showGuide: true,
+    showCue: true,
+    cuePosition: 50,
+
+    // ── 播放 ──
+    status: 'stopped', // stopped | playing | paused
+    playing: false,
+    autoTop: 0, // 兼容别名 = 当前滚动像素（与 offset 同步）
+    offset: 0, // 渲染用的滚动像素（ScrollEngine.current 的镜像）
+    freeTop: 0,
+    progress: 0,
+    progressValue: 0,
+    progressText: '0%',
+    resumePosition: 0,
+    totalScroll: 0,
+    contentHeight: 0,
+    textHeight: 0,
+    // 引擎当前真正在跑的速度（px/s）。菜单里显示出来，用于自证「调速有没有传到引擎」
+    speedPxPerSec: 0,
+    // 安全区（刘海/挖孔/圆角/Home 条）：WXML 用 CSS 变量消费
+    safeTop: 0,
+    safeBottom: 0,
+    safeLeft: 0,
+    safeRight: 0,
+    viewportHeight: 600,
+    startPad: 0,
+    endPad: 0,
+    finished: false,
+    focusIndex: 0,
+
+    // ── 设置 ──
+    settings: Object.assign({}, settingsEngine.DEFAULTS),
+    orientation: 'portrait',
+    roleFontSize: 28,
+    roleLineHeight: 46,
+    focus: false,
+    alignOptions: [],
+    textColors: [],
+    bgColors: [],
+    colorPicker: '',
+    colorWarning: false,
+    pctSpeed: 0,
+    pctFontSize: 0,
+    pctLineHeight: 0,
+    pctLetterSpacing: 0,
+    pctCue: 0,
+    pctWidth: 0,
+    pctCountdown: 0,
+    speedText: '200',
+    speedUnitText: '字/分',
+    speed: 200,
+    speedMin: 10,
+    speedMax: 600,
+    loop: false,
+    countdown: 0,
+    showClocks: true,
+    clockText: '',
+
+    // ── 菜单 ──
+    showMenu: false,
+    showControls: false, // 旧字段别名（部分测试按它判断菜单）
+    menuHeight: 480,
+
+    // ── 其他 ──
+    roleHighlight: true,
+    smartOff: false,
+    keepScreenOn: true,
+    fillLight: false,
     voiceEnabled: false,
     voiceLevel: 0,
     voiceCalibrating: false,
     voiceTip: '',
-
-    fillLight: false,
-    resumePosition: 0,
-
-    // 新手引导
-    guideVisible: false
+    finishHint: '',
+    guideVisible: false,
+    themePresets: [],
+    scrollStyle: 'smooth',
+    scrollMode: 'auto',
+    blobMode: false,
+    blobLineCount: 0
   },
+
+  /* ======================================================================
+   * 生命周期
+   * ==================================================================== */
 
   onLoad(options) {
     this.allLines = []
@@ -103,40 +165,51 @@ Page({
     this.displayLines = []
     this.roleFilter = null
     this.scriptId = ''
+    this.script = null
     this._launched = false
-    this._lastSection = -1
-    this._frameCount = 0
-    // 无缝无限滚动「是否已回绕过一圈」：首圈（false）开篇时，视口起点之前的
-    // 负行号用空白占位，绝不回绕去显示稿子结尾的文字；一旦回绕过（true）就恢复
-    // 行号取模的无缝拼接，让「结尾 → 开头」连续滚。切换台本/从头开始会重置。
-    this._wrapped = false
+    this._switching = false
+    this._menuSource = ''
+    this._sliderRects = {}
+    this._sliderToken = 0
+    this._activeSlider = ''
+    this._activeHSlider = ''
+    this._progressTimer = null
     this._countdownTimer = null
-    this._touching = false
-    this._dragged = false
-    this._suppressTap = false
-    this._touchStartY = 0
-    this._touchStartOffset = 0
+    this._clockTimer = null
+    this._layoutTimer = null
+    this._contentH = 0
+    this._statSaved = false
     this._seeking = false
     this._resumeAfterSeek = false
-    // 切换台本的重入锁：true 表示正在切，期间忽略新的切换点击
-    this._switching = false
-    // 菜单呼出前是否在滚动：用于「退出菜单后恢复滚动」（需求 2）
     this._wasPlayingBeforeMenu = false
-    // 菜单内容自然高度缓存：菜单常驻 DOM，可在 onReady 时预先量好，
-    // 双击打开时直接以「最终高度」一次性渲染，避开「先以 avail 高度出现、再缩到自然高」的中央闪现
-    this._menuNaturalH = 0
+    // 滚动内核：逐帧推进的真值，见 engine/scroll.js
+    this._frameCount = 0
+    this._lastPct = -1
+    this._wrapped = false
+    this._lastSection = -1
+    this._blobToasted = false
+    this._blobVisualLines = 0
+    this._blobLineCount = 0
+    this._freeTop = 0
 
     const win = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
     this.winWidth = win.windowWidth || 375
     this.winHeight = win.windowHeight || 667
+    this._safeLeft = undefined
+    this._safeRight = undefined
+    this._readSafeArea()
+
+    const orientation = settingsEngine.orientationOf(win)
+    const settings = settingsEngine.load(orientation, this.winWidth)
     this.setData({
-      statusBarHeight: win.statusBarHeight || 20,
-      navSafeTop: this._calcNavSafeTop(win),
+      orientation: orientation,
+      settings: settings,
       viewportHeight: this.winHeight,
-      speedMin: prefsEngine.SPEED_MIN,
-      speedMax: prefsEngine.SPEED_MAX,
-      themePresets: prefsEngine.PRESET_THEMES,
-      scrollStyleOptions: prefsEngine.SCROLL_STYLES
+      alignOptions: settingsEngine.TEXT_ALIGNS,
+      textColors: settingsEngine.TEXT_COLORS,
+      bgColors: settingsEngine.BG_COLORS,
+      themePresets: settingsEngine.THEME_PRESETS,
+      keepScreenOn: settings.keepScreenOn !== false
     })
 
     this.engine = new ScrollEngine({
@@ -144,269 +217,94 @@ Page({
       onEnd: this._onEnd.bind(this),
       onLoop: this._onLoop.bind(this)
     })
-    this.voice = new vad.VoiceController()
     this.stats = new StatsCollector({})
-    this._statSaved = false
-    // 首次使用引导：只在没看过时显示一次
+    this.voice = new vad.VoiceController()
+    this._applyScreenPrefs(settings)
+
     try {
       this.setData({ guideVisible: !wx.getStorageSync('baoge_guide_tp') })
     } catch (e) {
       this.setData({ guideVisible: false })
     }
 
-    if (!options.id) {
+    if (!options || !options.id) {
       util.toast('台本不存在')
       setTimeout(() => wx.navigateBack(), 1200)
       return
     }
+    // 设置页「打开提词页设置菜单」带 menu=1 进来：加载完直接把菜单拉开
+    this._openMenuOnReady = !!(options && options.menu)
     this._loadScript(options.id)
-  },
-
-  /**
-   * 计算自定义导航栏的安全起始 y：取「状态栏底部」与「右上角胶囊底部」的较大值，再加间距。
-   *
-   * 关键点：navigationStyle=custom 只是隐藏了原生标题栏，右上角那颗
-   * 「关闭/更多」胶囊依然存在且无法隐藏、无法移动。所以自定义顶栏的
-   * 「返回 / 设置」必须排在胶囊下方，否则竖屏下会直接叠在退出按钮上（需求 1）。
-   */
-  _calcNavSafeTop(win) {
-    const statusBar = (win && win.statusBarHeight) || 20
-    let menuBottom = 0
-    try {
-      if (typeof wx.getMenuButtonBoundingClientRect === 'function') {
-        const m = wx.getMenuButtonBoundingClientRect()
-        if (m && m.bottom) menuBottom = m.bottom
-      }
-    } catch (e) {
-      menuBottom = 0
-    }
-    if (!menuBottom) menuBottom = statusBar + 32 // 兜底：胶囊高约 32px
-    return Math.round(Math.max(statusBar, menuBottom) + 6)
-  },
-
-  /**
-   * 重新读取窗口真实尺寸，同步到 this.winWidth/winHeight 与 data 的安全区。
-   *
-   * 为什么必须存在：本页所有排版都基于 this.winHeight（_parseAndLayout 里
-   * effVp = winHeight * 0.52），而这个值原本只在 onLoad / onResize 里更新。
-   * 从设置页 navigateBack 回来时，onLoad 不会重跑、onResize 又不保证派发
-   * （设置页默认是竖屏，进去时屏幕已被转回竖屏，回到本页要再转回原方向），
-   * 于是 winHeight 停留在上一次的竖屏值，CSS 容器却是 100vh 的真实大小 ——
-   * 两者不一致就表现为「从设置回来只有半屏 / 台词整体错位」。
-   *
-   * @returns {boolean} 本次读取到的尺寸是否与此前不同
-   */
-  _syncWindowMetrics() {
-    let changed = false
-    try {
-      const win = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
-      const w = win.windowWidth || 375
-      const h = win.windowHeight || 667
-      if (w !== this.winWidth || h !== this.winHeight) changed = true
-      this.winWidth = w
-      this.winHeight = h
-      const navSafeTop = this._calcNavSafeTop(win)
-      const patch = { statusBarHeight: win.statusBarHeight || 20 }
-      // 只在真的变了才 setData：横竖来回进设置页时避免无谓的视图层重绘
-      if (navSafeTop !== this.data.navSafeTop) patch.navSafeTop = navSafeTop
-      this.setData(patch)
-    } catch (e) {
-      console.error('[tp] 读取窗口信息失败（已忽略）', e)
-    }
-    return changed
-  },
-
-  /**
-   * 延时兜底刷新尺寸并按需重排。
-   *
-   * 覆盖两类机型差异：
-   *   1) setPageOrientation 是异步生效的 —— onShow 里同步读到的可能还是切换前的旧值；
-   *   2) 部分机型干脆不派发 onResize —— 除了这里没人会再告诉本页「尺寸变了」。
-   * 所以延时一拍再取一次，只有真的变了才重排，避免无谓重写导致滚动位置跳动。
-   */
-  _scheduleWindowResync() {
-    if (this._resyncTimer) clearTimeout(this._resyncTimer)
-    this._resyncTimer = setTimeout(() => {
-      this._resyncTimer = null
-      if (!this._launched || !this.allLines.length) return
-      this._syncWindowMetrics()
-      // 兜底重排：无论尺寸是否变化，都按当前最新尺寸重算一次可视区，
-      // 确保「排版用的高度」与「CSS 实际容器高度(100vh)」严格一致。
-      const p = this.engine ? this.engine.progress : 0
-      const wasPlaying = this.data.playing
-      this._parseAndLayout()
-      this._seekTo(p)
-      if (wasPlaying && !this.data.voiceEnabled) this.engine.resume()
-      if (this.data.showControls) this._fitMenuToScreen()
-    }, 400)
   },
 
   onReady() {
     this._launched = true
-    // 进入即按设置锁定方向（竖屏/横屏/自动），之后由 onResize 接管旋转重排
-    this._applyOrientation(this.data.orientation)
-    // 菜单常驻 DOM，提前量好自然高并缓存：双击打开时即可直接落在最终高度（issue 1 防闪现）
-    this._measureMenuNatural()
-  },
-
-  /**
-   * 屏幕方向变化（手机旋转或 setPageOrientation 生效）时，
-   * 重新读取窗口尺寸并重排，否则横竖切换后每行字数/布局还是旧的。
-   */
-  onResize(res) {
-    const size = (res && res.size) || {}
-    if (size.windowWidth) this.winWidth = size.windowWidth
-    if (size.windowHeight) this.winHeight = size.windowHeight
-    // 转屏后胶囊位置会变，安全区要跟着重算，否则竖屏下顶栏又会压住胶囊
-    try {
-      const win = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
-      this.setData({ navSafeTop: this._calcNavSafeTop(win) })
-    } catch (e) {}
-    if (this._launched && this.allLines.length) {
-      const p = this.engine ? this.engine.progress : 0
-      this._parseAndLayout()
-      this._seekTo(p)
-    }
-  },
-
-  /**
-   * 应用屏幕方向设置。竖屏/横屏用 API 强制锁定；自动则释放锁定，随设备旋转。
-   */
-  _applyOrientation(orient) {
-    if (typeof wx.setPageOrientation !== 'function') return
-    if (!orient) return
-    // 部分真机/模拟器在 onReady 阶段强制切方向会白屏或卡死页面，
-    // 用 try/catch 兜底，并在下一拍执行，避免阻塞首帧渲染。
-    try {
+    this._tickClock()
+    if (this._clockTimer) clearInterval(this._clockTimer)
+    this._clockTimer = setInterval(() => this._tickClock(), 10000)
+    if (this._openMenuOnReady) {
+      this._openMenuOnReady = false
+      // 等首屏排版落定再开菜单：否则选择器量到的是空布局
       setTimeout(() => {
-        try {
-          wx.setPageOrientation({ orientation: orient, fail: () => {}, success: () => {} })
-        } catch (e) {
-          console.error('[tp] setPageOrientation 失败（已忽略）', e)
-        }
-      }, 0)
-    } catch (e) {
-      console.error('[tp] setPageOrientation 调度失败（已忽略）', e)
+        if (!this.data.showMenu) this.onOpenMenu()
+      }, 160)
     }
-  },
-
-  /**
-   * 后台保护：小程序退到后台后定时器会被降频甚至冻结，
-   * 回前台时不能直接续播（稿子可能已经停在中途），先暂停再询问用户。
-   */
-  onHide() {
-    this._wasPlaying = this.data.playing
-    this.engine.pause()
-    if (this.data.playing) this._pauseForStats()
-    this.setData({ playing: false })
-    if (this.voice.running) this.voice.stop()
-    if (this._countdownTimer) {
-      clearInterval(this._countdownTimer)
-      this._countdownTimer = null
-    }
-    this._savePosition()
-    // 注意：这里刻意【不】调用 _finalizeStats。
-    // 之前在这里收尾会把 _statSaved 置 true 并落一条半程记录，
-    // 导致切后台回来再读完时，复盘弹窗再也不会弹（_finalizeStats 直接 return）。
-    // 切后台只是暂停，会话还活着；真正收尾交给 onEnd / onUnload。
   },
 
   onShow() {
     if (!this._launched) return
-    this._applyScreenPrefs()
-    // 从首页/设置页返回时，台本列表可能已变（删了台本），刷新角标与上/下按钮的置灰态
     this._updateScriptPos()
+    this._applyScreenPrefs(this.data.settings)
+  },
 
-    // 从设置页返回：参数可能变过，按新参数重新排版并保留进度与播放状态
-    if (this._fromSettings) {
-      this._fromSettings = false
-      const prefs = app.globalData.prefs || prefsEngine.load()
-      // 方向可能改了，重新锁定
-      this.setData({ orientation: prefs.orientation || 'landscape' })
-      this._applyOrientation(this.data.orientation)
-      // 必须重新拉一次真实窗口尺寸：设置页默认竖屏，返回时屏幕才刚转回来，
-      // 部分机型此时不派发 onResize，winHeight 会停在竖屏旧值 → 排版算出的
-      // 可视区与实际视口不符，表现为「从设置回来看只有半屏」。
-      this._syncWindowMetrics()
-      // 同步滚动模式，并据此决定声控开关
-      const wantVoice = prefs.scrollMode === 'voice'
-      // 同步滚动方式真值 scrollStyle（P1-1 修复：设置页改了 scrollStyle，返回时 data 必须跟上，
-      // 否则菜单"滚动"高亮、onToggleVoice、播放键都会按旧的 smooth 走，出现矛盾态）
-      const style = prefs.scrollStyle || (wantVoice ? 'voice' : 'smooth')
-      this.setData({ scrollStyle: style, loop: !!prefs.loop })
-      this.engine.loop = !!prefs.loop
-      if (!wantVoice && this.data.voiceEnabled) {
-        if (this.voice.running) this.voice.stop()
-        this.setData({ voiceEnabled: false, voiceLevel: 0, voiceTip: '' })
-        if (!this.data.playing) this.engine.resume()
-      } else if (wantVoice && !this.data.voiceEnabled) {
-        this.setData({ voiceEnabled: true })
-      }
-      if (this.allLines.length) {
-        const progress = this.engine.progress
-        const wasPlaying = this.data.playing
-        this._parseAndLayout()
-        this._seekTo(progress)
-        if (wasPlaying && !this.data.voiceEnabled) this.engine.resume()
-      }
-      // setPageOrientation 是异步的，上面同步读到的可能还是切换前的旧尺寸；
-      // 延时一拍再取一次并按最新尺寸重排，覆盖「异步未生效」与「不派发 onResize」两类机型。
-      this._scheduleWindowResync()
-      return
-    }
-
-    // 从后台切回：定时器在后台会被冻结，不能直接续播，先暂停再询问
-    if (this._wasPlaying) {
-      this._wasPlaying = false
-      wx.showModal({
-        title: '继续提词吗',
-        content: '刚刚切到后台，提词已暂停。要从当前位置继续吗？',
-        confirmText: '继续',
-        cancelText: '从头开始',
-        success: (r) => {
-          if (r.confirm) {
-            // 恢复计时（onHide 里调过 onPause），否则本遍的「实际滚动时长」会漏算
-            if (this.stats) this._resumeForStats()
-            this._startScroll()
-          } else {
-            // 「从头开始」必须真的从头播，之前只 seek 到 0 就停住了，用户会以为坏了
-            this._seekTo(0)
-            this._startScroll(true)
-          }
-        }
-      })
-    }
+  onHide() {
+    // 切后台：停表但保留 current（位置不丢），落盘进度。
+    // 必须同步 status='paused'，否则回前台再点播放会被 onTapPlay 误判成「正在播→暂停」。
+    if (this.engine) this.engine.pause()
+    if (this.data.playing) this.setData({ playing: false, status: 'paused' })
+    if (this.voice && this.voice.running) this.voice.stop()
+    this._clearCountdown()
+    this._savePosition()
   },
 
   onUnload() {
-    this.engine.destroy()
-    if (this.voice) this.voice.stop()
-    if (this._countdownTimer) clearInterval(this._countdownTimer)
-    // 尺寸兜底刷新定时器：不掐掉的话会在已卸载的实例上跑 setData（从设置返回后立刻退出时必现）
-    if (this._resyncTimer) clearTimeout(this._resyncTimer)
-    // 单击延迟与菜单自动收起都是延时任务，页面销毁时必须清掉，
-    // 否则会在已卸载的实例上触发 setData
-    if (this._tapTimer) clearTimeout(this._tapTimer)
-    if (this._autoHideTimer) clearTimeout(this._autoHideTimer)
-    this._restoreScreen()
+    // 退出前先落盘（engine.current 是逐帧实时位置，无需反算）
     this._savePosition()
+    if (this.engine) this.engine.stop()
+    if (this.voice) this.voice.stop()
+    this._clearCountdown()
+    if (this._progressTimer) clearInterval(this._progressTimer)
+    if (this._clockTimer) clearInterval(this._clockTimer)
+    if (this._layoutTimer) clearTimeout(this._layoutTimer)
+    this._restoreScreen()
     this._finalizeStats(false)
   },
 
-  // ---------- 加载与布局 ----------
+  onResize(res) {
+    const size = (res && res.size) || {}
+    const w = size.windowWidth || this.winWidth
+    const h = size.windowHeight || this.winHeight
+    if (!w || !h) return
+    this.winWidth = w
+    this.winHeight = h
+    // 安全区随方向变（横屏刘海在左右），转屏后必须重新读
+    this._safeLeft = undefined
+    this._safeRight = undefined
+    const orientation = settingsEngine.orientationOf({ windowWidth: w, windowHeight: h })
+    // 横竖屏各存一套设置：换向就换一套参数，互不污染
+    const settings = settingsEngine.load(orientation, w)
+    this.setData({ orientation: orientation, settings: settings, viewportHeight: h })
+    this._parseAndLayout({ keepProgress: true })
+  },
 
-  /**
-   * 载入台本。
-   * @param {string} id 台本 id
-   * @param {object} [opts] opts.fresh=true 表示「主动切换过来的新台本」：
-   *   不弹「继续上次进度」询问，直接从头开始，保证点了下一个就立刻生效。
-   *   首次进入页面（onLoad）时保持原行为，询问是否续播。
-   */
+  /* ======================================================================
+   * 台本加载
+   * ==================================================================== */
+
   _loadScript(id, opts) {
     const fresh = !!(opts && opts.fresh)
     const script = store.get(id)
     if (!script) {
-      // 加载失败也要解锁，否则「上/下一个台本」会一直处于锁定态
       this._switching = false
       util.toast('台本不存在')
       setTimeout(() => wx.navigateBack(), 1200)
@@ -414,41 +312,23 @@ Page({
     }
     this.script = script
     this.scriptId = id
+    this.setData({ title: script.title })
     this._updateScriptPos()
-    const prefs = app.globalData.prefs || prefsEngine.load()
-    // 两种滚动方式：smooth 匀速自动滚动(默认) / voice 声控跟读。
-    // 老版本可能只存 scrollMode:'voice'（迁移保留声控），故 scrollStyle 缺失时按它回落。
-    // 已下架的 page（逐段）由 prefs.load() 在读取侧归一化成 smooth，此处无需再处理。
-    let style =
-      prefs.scrollStyle || (prefs.scrollMode === 'voice' ? 'voice' : 'smooth')
-    // 滚动模式决定进入后是匀速自动滚动还是声控跟读；loop 默认开（Req 1：无缝无限滚动）
-    this.setData({
-      title: script.title,
-      orientation: prefs.orientation || 'landscape',
-      scrollMode: style === 'voice' ? 'voice' : 'auto',
-      scrollStyle: style,
-      voiceEnabled: style === 'voice',
-      loop: !!prefs.loop
-    })
-    // 切换到另一个台本时，引擎位置还停在上一篇的偏移量上，必须先归零，
-    // 否则新台本会直接从中途开始滚。
+
+    // 切台本时引擎位置还停在上一篇，先归零
     if (this.engine) this.engine.reset(0)
+    this._wrapped = false
     this._lastSection = -1
-    this._wrapped = false // 新台本重新回到「首圈开篇留空」语义
+    this._seekPx(0)
     this._parseAndLayout()
 
     if (fresh) {
-      // 主动切换台本：跳过续播询问（旧台本的进度已在 _prepareSwitch 里落盘保存）。
-      // 不跳的话，切换弹的 toast 会和 showModal 叠在一起，且新台本被对话框挡住不算「立即生效」，
-      // 连点还会堆出多个 modal。
-      this._startCountdown()
       this._switching = false
       return
     }
 
     const pos = store.getPosition(this.scriptId)
     if (pos > 0.01 && pos < 0.99) {
-      this.setData({ resumePosition: pos })
       wx.showModal({
         title: '继续上次进度',
         content: `上次读到 ${Math.round(pos * 100)}%，要接着读吗？`,
@@ -456,33 +336,20 @@ Page({
         cancelText: '从头开始',
         success: (r) => {
           if (r.confirm) this._seekTo(pos)
-          this._startCountdown()
         }
       })
-    } else {
-      this._startCountdown()
     }
     this._switching = false
   },
 
-  /**
-   * 台本切换序列（切换与角标的唯一顺序来源）。
-   * 复用 store.list() 的既有排序，保证与首页列表、角标「N / M」顺序一致，
-   * 避免「切换顺序」和「角标顺序」两套顺序打架导致「角标 2/5 但点下一个没反应」。
-   * 集中到这一处：将来若想改成「按创建时间 / 按集号」正序，只改这一行。
-   */
   _scriptOrder() {
     try {
-      // 按集号递增排序：菜单「上/下一个台本」与角标同源，严格遵循 第N集→第N+1集 连续推进。
-      // 列表无任何可解析集号时，sortByEpisode 退化回 store.list 原序（更新时间降序），兼容纯随笔。
       return util.sortByEpisode(store.list())
     } catch (e) {
       return []
     }
   },
 
-  /** 更新「第 N / 共 M 个台本」角标 + 上/下按钮可用性（需求 10）。
-   *  角标和按钮必须共用 _scriptOrder()，否则会出现「角标 2/5 但点下一个没反应」的状态不一致。 */
   _updateScriptPos() {
     let text = ''
     let hasPrev = false
@@ -501,954 +368,6 @@ Page({
     this.setData({ scriptPosText: text, hasPrevScript: hasPrev, hasNextScript: hasNext })
   },
 
-  /**
-   * 重排并保留当前进度与播放状态。
-   * 改字号 / 转屏 / 换配色 / 换高亮模式后都要走这里，否则画面会跳回开头。
-   */
-  _relayoutKeepProgress() {
-    const p = this.engine ? this.engine.progress : 0
-    const wasPlaying = this.data.playing
-    this._parseAndLayout()
-    this._seekTo(p)
-    if (wasPlaying && !this.data.voiceEnabled) {
-      this.engine.resume()
-      this.setData({ playing: true })
-    }
-  },
-
-  /**
-   * 解析并按屏幕尺寸重排。
-   * 每行字数按屏宽与字号实时计算，横屏竖屏切换都要重新走这里。
-   */
-  _parseAndLayout() {
-    // 用 DEFAULTS 兜底合并，防止 app.globalData.prefs 万一为局部对象
-    // （缺 lineHeight/fontSize 等字段）时 lineHeightPx 算出 NaN，
-    // 进而 maxOffset=0、引擎首帧即结束、台词完全不滚动的静默死机。
-    const prefs = Object.assign({}, prefsEngine.DEFAULTS, app.globalData.prefs || prefsEngine.load())
-    const fontSizePx = prefsEngine.fontSizePx(prefs.fontSize)
-    const lineHeightPx = Math.round(fontSizePx * prefs.lineHeight)
-    // 留白（左右边缘间距 px）：允许自定义为 0（贴边）。不能用 `|| 40`，
-    // 否则用户在设置里把留白调成 0 时会被当成「未设置」回落成 40，黑边调不下去。
-    const margin = typeof prefs.marginHorizontal === 'number' ? prefs.marginHorizontal : 40
-    const available = Math.max(120, this.winWidth - margin * 2)
-    const charsPerLine = Math.max(
-      8,
-      Math.floor(available / (fontSizePx + (prefs.letterSpacing || 0)))
-    )
-
-    const eff = prefsEngine.effectiveColors(prefs)
-    // 一键关闭智能功能（兜底）：开启后角色高亮一并停用，台词全部按正文色渲染。
-    // 角色识别本身仍然照做（不浪费已有逻辑、也不影响行数），只是不染色、不过滤。
-    const smartOff = !!prefs.smartOff
-    const parsed = parser.parseScript(this.script.content, {
-      charsPerLine: charsPerLine,
-      manualRoles: this.script.manualRoles || [],
-      roleBlacklist: this.script.roleBlacklist || [],
-      roleAlias: this.script.roleAlias || {},
-      roleHighlight: smartOff ? false : prefs.roleHighlight !== false,
-      isDark: eff.isDark,
-      roleColorOverride: this.script.roleColorOverride || {}
-    })
-    this.allAliases = parsed.alias || {}
-
-    // 颜色直接在 JS 里算到行上（需求 4）：
-    // 之前由 WXML 用 `roleHighlightMode === 'name' && line.color ? textColor : ...`
-    // 现场判断，两种模式的差异非常依赖这个表达式正确求值，实际很容易失效；
-    // 现在改成在排版期就把「名字色 / 台词色」落到每个字段上，渲染层只做直读。
-    // 2026-10-27：高亮方式收敛为只有「名字高亮」，full 整行高亮已下线 ——
-    //   角色名：用角色色
-    //   台词  ：恒用正文色（不再有按模式二选一的分支，少一个能失效的判据）
-    parsed.lines.forEach((line, i) => {
-      line._i = i
-      const roleColor = line.role ? roleEngine.colorOf(parsed.roles, line.role) : null
-      line.color = roleColor
-      line.prefixColor = roleColor || eff.text
-      line.bodyColor = eff.text
-    })
-
-    this.allLines = parsed.lines
-    this.allRoles = parsed.roles
-    // 角色显示过滤：编辑页「角色显示选择」配置（script.roleDisplay）→ 只显示勾选角色；
-    // 空配置 = 显示全部（null）。_relayoutKeepProgress 重排也会重读该配置，显示行为恒与编辑页一致。
-    // 兜底：smartOff 打开时一律不过滤，displayLines 恒等于 allLines，保证台词 100% 完整。
-    this.roleFilter = smartOff ? null : this._roleDisplayFilter()
-    this.displayLines = smartOff
-      ? this.allLines
-      : roleEngine.filterLinesByRole(this.allLines, this.roleFilter)
-    this.contentHeight = this.displayLines.length * lineHeightPx
-
-    // 台词可视区 = 屏幕减去顶部 40vh 留白（台词从参考线开始）再减底部进度条/安全区。
-    // 旧实现把整屏 winHeight 当作视口传给引擎，导致 maxOffset 偏小，
-    // 长稿末尾一截永远滚不到可视区——竖屏(高屏)顶留白绝对像素大，缺得尤其多，
-    // 表现就是「文字显示不全 / 最后几句台词看不见」。
-    const TOP_PAD_RATIO = 0.4
-    const BOTTOM_RESERVE_RATIO = 0.08
-    const effVp = Math.max(
-      lineHeightPx,
-      Math.round(this.winHeight * (1 - TOP_PAD_RATIO - BOTTOM_RESERVE_RATIO))
-    )
-
-    // 视线参考线(.tp-guide 在视口 50% 处)相对「内容首行基线」(.tp-content padding-top:40vh)
-    // 的偏移。台本结束的唯一定义 = 最后一行文字滚过此线。
-    // 旧判定用「滚到底」(totalHeight - effVp)会在末行停在屏幕底部约 92% 处就提前收场；
-    // 改为「末行滚过参考线(50%)」后，结束时机延后约 42% 屏，末尾几句才真正读完、看得见。
-    const GUIDE_LINE_RATIO = 0.5 // 与 wxss 中 .tp-guide { top: 50% } 保持一致
-    const guideOffsetPx = Math.max(
-      0,
-      Math.round(this.winHeight * (GUIDE_LINE_RATIO - TOP_PAD_RATIO))
-    )
-
-    const pxPerSecond = pxPerSecondOf(prefs.speed)
-
-    this.setData({
-      lineHeightPx: lineHeightPx,
-      fontSizePx: fontSizePx,
-      letterSpacing: prefs.letterSpacing || 0,
-      marginHorizontal: margin,
-      contentHeight: this.contentHeight,
-      viewportHeight: effVp,
-      bg: eff.bg,
-      textColor: eff.text,
-      isDark: eff.isDark,
-      fontFamily: prefsEngine.fontFamilyCss(prefs.fontFamily),
-      // 高亮开关的真实状态：总闸开着时高亮必然是关的（与 prefs.normalize 的不变式一致）
-      roleHighlight: smartOff ? false : prefs.roleHighlight !== false,
-      colorScheme: prefs.colorScheme || 'white-on-black',
-      mirror: !!prefs.mirror,
-      showGuide: prefs.showGuide !== false,
-      speed: prefs.speed,
-      fillLight: !!prefs.fillLight
-    })
-
-    this.engine.configure(lineHeightPx, this.contentHeight, effVp, pxPerSecond, guideOffsetPx)
-    this.engine.loop = !!prefs.loop
-    this._updateVisible(true)
-    this._applyScreenPrefs()
-  },
-
-  /** 屏幕常亮与补光灯 */
-  _applyScreenPrefs() {
-    const prefs = app.globalData.prefs || prefsEngine.load()
-    wx.setKeepScreenOn({ keepScreenOn: prefs.keepScreenOn !== false })
-    if (prefs.fillLight) {
-      wx.setScreenBrightness({ value: 1 })
-    }
-  },
-
-  _restoreScreen() {
-    wx.setKeepScreenOn({ keepScreenOn: false })
-    if (this.data.fillLight) {
-      wx.setScreenBrightness({ value: -1 }) // -1 表示恢复系统亮度
-    }
-  },
-
-  // ---------- 滚动 ----------
-
-  /** 取消开场倒计时。点「暂停」时必须同步取消，否则倒计时结束后会自动开播，
-   *  表现就是「暂停键按了没反应，过两秒自己又滚起来」。 */
-  _clearCountdown() {
-    if (this._countdownTimer) {
-      clearInterval(this._countdownTimer)
-      this._countdownTimer = null
-    }
-    if (this.data.countdown > 0) this.setData({ countdown: 0 })
-  },
-
-  _startCountdown() {
-    const prefs = app.globalData.prefs || prefsEngine.load()
-    const n = prefs.countdown || 0
-    if (n <= 0) {
-      // 关掉倒计时时也必须传 isNew=true：否则统计收集器不会 onStart()，
-      // startTs 停留在 0，最后算出的「用时」= 当前时间戳 - 0 ≈ 几万天。
-      this._startScroll(true)
-      return
-    }
-    // 重复进入（连续切换台本 / 点重来）时必须先掐掉上一轮定时器：
-    // 旧 interval 的引用一旦被覆盖就再也 clear 不掉，两个倒计时会同时跑，
-    // 并各触发一次 _startScroll，表现为「倒计时一次跳两格」「切完立刻自己开跑」。
-    if (this._countdownTimer) {
-      clearInterval(this._countdownTimer)
-      this._countdownTimer = null
-    }
-    // 倒计时期间必须先收起底部控制菜单：菜单 z-index 高于倒计时遮罩，
-    // 否则「3-2-1」数字会被菜单盖住（尤其竖屏菜单占屏 78%），表现就是「倒计时完全看不到」。
-    this.setData({ countdown: n, showControls: false, playing: false })
-    this._countdownTimer = setInterval(() => {
-      const next = this.data.countdown - 1
-      if (next <= 0) {
-        clearInterval(this._countdownTimer)
-        this._countdownTimer = null
-        this.setData({ countdown: 0 })
-        this._startScroll(true)
-      } else {
-        this.setData({ countdown: next })
-      }
-    }, 1000)
-  },
-
-  /**
-   * 开始/恢复滚动。
-   * @param {boolean} [isNew] true 表示开启「新的一遍」提词，重置并启动统计收集器
-   */
-  _startScroll(isNew) {
-    if (isNew && this.stats) {
-      this.stats.reset()
-      const prefs = app.globalData.prefs || prefsEngine.load()
-      this.stats.totalLines = this.allLines.length
-      this.stats.pxPerSecond = pxPerSecondOf(prefs.speed)
-      this.stats.lineHeightPx = this.data.lineHeightPx
-      this.stats.onStart()
-      this._statSaved = false
-    }
-    this.setData({ finished: false, showControls: false })
-    // 声控跟读：绝不主动开播。引擎保持「待命暂停」，由 VAD 的 onVoice 回调驱动滚动、
-    // onSilence 回调暂停。否则一进页面就自动滚动，用户没开口字幕也走——这就是
-    // 「语音跟读完全没用、启动后还在自己滚」的根因。
-    if (this.data.voiceEnabled) {
-      if (!this.voice.running) this._startVoice()
-      this.setData({ playing: false })
-      return
-    }
-    this.engine.start()
-    this.setData({ playing: true })
-  },
-
-  _onUpdate(offset, progress, lineIndex) {
-    if (!isFinite(offset)) return // 防御：位置异常时跳过，避免画面卡死
-    if (this.stats) this.stats.onTick(progress)
-    // 匀速与声控都保持连续滚动、不分段不停顿，故此处没有段末停顿逻辑。
-
-    // offset 每帧都要给，否则画面会卡顿；百分比只有整数变化时才有必要跨线程传一次，
-    // 长稿件能省掉约 90% 的 setData 数据体积。
-    const patch = { offset: offset }
-    const pct = Math.round(progress * 100)
-    if (pct !== this._lastPct) {
-      this._lastPct = pct
-      patch.progressText = pct + '%'
-      patch.progressValue = pct
-    }
-    this.setData(patch)
-
-    // 可见区裁剪，不必每帧都做数组切片
-    this._frameCount++
-    if (this._frameCount % 8 === 0) this._updateVisible(false)
-  },
-
-  _onEnd() {
-    if (this.stats) this.stats.onEnd()
-    this._finalizeStats(true)
-    // 需求：非循环台本滚动结束（最后一行滚过参考线）时——直接冻结在当前画面，
-    // 不弹菜单、不跳转、不重置、不清空，等用户手动操作。
-    // 旧逻辑 setData 里带 showControls:true，会在滚完瞬间自动弹出控制菜单覆盖层，
-    // 与「菜单仅在用户主动触发（双击/返回/设置按钮/手势）才显示」冲突，已移除。
-    this.setData({ playing: false, finished: true })
-    this._savePosition()
-  },
-
-  /** 循环播放回到开头时：重置段标记避免停顿误触发，并立即重排可见区 */
-  _onLoop() {
-    if (this.stats) this.stats.onLoop()
-    this._lastSection = -1
-    // 已回绕过一圈：从此负行号恢复取模拼接（结尾 → 开头无缝接续），
-    // 只有「首圈开篇」那段才需要空白占位。
-    this._wrapped = true
-    this._updateVisible(true)
-  },
-
-  /**
-   * 收尾并提交本次复盘记录。
-   * @param {boolean} completed 是否自然读完（滚到底触发 onEnd）
-   */
-  /**
-   * 复盘功能已下架（pages/review 已删除），但统计采集仍在进行，
-   * 写入保留以兼容 v1.1「复盘回归」计划（存储占用极小：每篇 ≤30 条 × ~120B）。
-   * 见审查报告 P3-1：在「v1.1 计划恢复」前提下，保留 stats 存储格式与写入路径。
-   */
-  _finalizeStats(completed) {
-    if (!this.stats || !this.scriptId || this._statSaved) return
-    const snap = this.stats.snapshot()
-    // 太短的无效会话（刚点开就退出）不计入复盘
-    if (!completed && snap.activeMs < 800 && !snap.completed) return
-    store.appendStat(this.scriptId, snap)
-    this._statSaved = true
-  },
-
-  /** 关闭首次使用引导 */
-  onCloseGuide() {
-    try {
-      wx.setStorageSync('baoge_guide_tp', 1)
-    } catch (e) {}
-    this.setData({ guideVisible: false })
-  },
-
-  /**
-   * 只渲染视口附近的行，长稿件也不会卡。
-   * 内容整体偏移 = visibleStart * 行高 - offset，保证裁剪后位置依然正确。
-   */
-  _updateVisible(force) {
-    const lineH = this.data.lineHeightPx
-    // 用引擎的真实位置而不是 data.offset，避免 seek 后两者不同步导致算错行号
-    const offset = this.engine ? this.engine.current : this.data.offset
-    const total = this.displayLines.length
-    // 无缝无限滚动：循环时行号对总行数取模拼接，使滚到底直接接上开头（见 scroll.js 的回绕）。
-    // 非循环时按原逻辑从 0 起裁。
-    const loop = this.engine && this.engine.loop && total > 1
-    const rawStart = Math.floor(offset / lineH) - 10
-    const start = loop ? rawStart : Math.max(0, rawStart)
-    const count = Math.ceil(this.data.viewportHeight / lineH) + 24
-    if (!force && start === this.data.visibleStart) return
-    let visible
-    if (loop) {
-      visible = []
-      // 首圈开篇：视口起点还没进入内容（start<0）时，超出部分渲染成空白行占位，
-      // 让「文本开头留空、台词从标准线（屏中参考线）开始」，而不是取模把稿子
-      // 结尾的行接上来显示在屏顶（观感：还没开始读就先看到末尾文字）。
-      // 一旦回绕过一圈（_wrapped=true），负行号恢复取模拼接 —— 无缝接续只在
-      // 「结尾 → 开头」那次需要，开篇那次绝不能接结尾。
-      const leading = !this._wrapped ? Math.max(0, -start) : 0
-      for (let i = 0; i < count; i++) {
-        if (i < leading) {
-          visible.push({ _i: 'gap' + i, rolePrefix: '', body: '', isGap: true })
-          continue
-        }
-        const idx = ((start + i) % total + total) % total
-        const ln = this.displayLines[idx]
-        // 行对象复用：把 _i 改成「本次窗口内的位置」，wx:key 才唯一、不被重复复用串色
-        visible.push(ln._i === idx ? ln : Object.assign({}, ln, { _i: idx }))
-      }
-    } else {
-      visible = this.displayLines.slice(start, start + count)
-    }
-    this.setData({
-      visibleStart: start,
-      visibleLines: visible
-    })
-  },
-
-  /** 把引擎位置同步回视图。seek/reset 之后必须调用，否则画面停在旧位置 */
-  _syncOffsetFromEngine() {
-    const offset = this.engine ? this.engine.current : 0
-    this.setData({
-      offset: offset,
-      progressText: Math.round((this.engine ? this.engine.progress : 0) * 100) + '%'
-    })
-  },
-
-  /** 跳转到指定进度（0-1），一次性完成：定位引擎 + 同步视图 + 重算可见区 */
-  _seekTo(progress) {
-    // 回到开头（进度 0 附近）：重新进入「首圈开篇留空」语义，
-    // 让从头开始播放时屏顶不再闪出稿子结尾文字
-    if (progress <= 0.01) this._wrapped = false
-    this.engine.seekProgress(progress)
-    this._syncOffsetFromEngine()
-    this._updateVisible(true)
-  },
-
-  _savePosition() {
-    if (!this.scriptId) return
-    store.updatePosition(this.scriptId, this.engine ? this.engine.progress : 0)
-  },
-
-  // ---------- 交互 ----------
-
-  /**
-   * 点击屏幕：
-   *   单击 = 什么都不做（不再触发暂停，也就不会闪出菜单）
-   *   双击 = 呼出 / 收起控制菜单
-   *
-   * 单击必须「吞掉」：早期版本单击会切播放状态，而播放状态变化又会联动
-   * 若干 UI（倒计时结束会自动收起菜单、滚到底会自动弹出菜单），
-   * 观感就是「轻轻点一下屏幕，菜单闪一下又没了」。现在单击只做一个
-   * DOUBLE_TAP_MS 的静默等待，确认没有第二下就直接结束，不做任何动作。
-   */
-  onTapScreen() {
-    if (this._suppressTap) return
-    const now = Date.now()
-    if (this._lastTapAt && now - this._lastTapAt < DOUBLE_TAP_MS) {
-      if (this._tapTimer) {
-        clearTimeout(this._tapTimer)
-        this._tapTimer = null
-      }
-      this._lastTapAt = 0
-      this._toggleControls()
-      return
-    }
-    this._lastTapAt = now
-    if (this._tapTimer) clearTimeout(this._tapTimer)
-    // 单击：等待双击窗口结束；若期间没有第二下，则视为单击 → 暂停 / 恢复滚动
-    // （需求 2：点一下暂停，再点一下继续；与双击呼出菜单互不冲突）
-    this._tapTimer = setTimeout(() => {
-      this._tapTimer = null
-      this._lastTapAt = 0
-      this.onTapPlay()
-    }, DOUBLE_TAP_MS)
-  },
-
-  /** 双击：切换控制菜单（开着就收起、关着就呼出） */
-  _toggleControls() {
-    if (this.data.showControls) {
-      this._closeControls()
-    } else {
-      this._openControls()
-    }
-  },
-
-  /**
-   * 控制菜单高度适配：
-   *  - 横屏：菜单最多占屏幕高度的 1/5（台词优先，菜单只做一条紧凑工具条），
-   *    放不下的部分在 scroll-view 里上下滑动看全。
-   *  - 竖屏：最多占 78% 屏高。
-   *
-   * 直接用缓存的「菜单内容自然高」与上限取小，一次性落到最终高度，
-   * 不再经过「先按上限渲染、80ms 后再缩到自然高」的两步走——
-   * 后者会让底部锚定的面板在缩小瞬间把内容从中上部「掉」到底部，正是双击菜单的中央闪现。
-   * 内容变化时（换字号/转屏）再 _measureMenuNatural 重新测一次刷新缓存。
-   */
-  _fitMenuToScreen() {
-    const land = this.data.orientation === 'landscape'
-    // 横屏 20%（需求 4：菜单最多占屏幕 1/5，台词优先）、竖屏 78%。
-    // 上限直接取屏幕比例高度，过低仅兜底到 72；绝不再先减内边距 floor 到 72 后提前 return，
-    // 否则横屏会卡在默认 620 不更新（旧 bug）。
-    let avail = Math.round((this.winHeight || 375) * (land ? 0.2 : 0.78))
-    if (avail < 72) avail = 72
-    if (avail <= 0) return
-    const natural = this._menuNaturalH || 0
-    const finalH = natural && natural < avail ? natural : avail
-    this.setData({ menuHeight: finalH })
-    // 菜单内容可能已变（字号/横竖），重新测一次自然高，供下次打开/适配使用
-    this._measureMenuNatural()
-  },
-
-  /**
-   * 测量菜单内容（.tp-menu-inner）的自然高度并缓存到 this._menuNaturalH。
-   * 菜单常驻 DOM（visibility 切换），即便当前隐藏，布局仍在，可正常测量。
-   */
-  _measureMenuNatural() {
-    if (typeof wx.createSelectorQuery !== 'function') return
-    try {
-      wx.createSelectorQuery()
-        .in(this)
-        .select('.tp-menu-inner')
-        .boundingClientRect((rect) => {
-          if (rect && rect.height) this._menuNaturalH = Math.ceil(rect.height)
-        })
-        .exec()
-    } catch (e) {
-      /* 测量失败保持上一次缓存即可 */
-    }
-  },
-
-  /** 点击菜单外的半透明遮罩关闭菜单（需求 4） */
-  onCloseControls() {
-    this._closeControls()
-  },
-
-  /**
-   * 双击 / 点击呼出控制菜单：先暂停滚动，让菜单后面不跟着跑（需求 2）。
-   * 记住呼出前是否在播放，供退出菜单时决定要不要恢复。
-   *
-   * 防闪现关键：菜单常驻 DOM、用缓存自然高直接以「最终高度」一次性渲染，
-   * 不经历「先 avail 高度出现在中上部、再缩到自然高落到下方」的中间态，
-   * 因此双击时菜单直接出现在底部目标位置，没有中央一闪。
-   */
-  _openControls() {
-    this._wasPlayingBeforeMenu = this.data.playing
-    if (this.data.playing) {
-      this._clearCountdown()
-      this.engine.pause()
-      this._pauseForStats()
-    }
-    const land = this.data.orientation === 'landscape'
-    let avail = Math.round((this.winHeight || 375) * (land ? 0.2 : 0.78))
-    if (avail < 72) avail = 72
-    if (avail <= 0) avail = 72
-    const natural = this._menuNaturalH || 0
-    const finalH = natural && natural < avail ? natural : avail
-    // 一次性把高度与可见性同时写好：菜单首帧即落在最终高度，无中央闪现
-    this.setData({ menuHeight: finalH, showControls: true, playing: false })
-    this._scheduleAutoHide()
-  },
-
-  /**
-   * 退出控制菜单：按需恢复滚动（需求 2）。
-   * 仅当「呼出前正在滚动」且非声控、未读完时才自动续播；
-   * 否则（本来就是暂停 / 声控跟读 / 已读完）保持原状，避免误启动。
-   */
-  _closeControls() {
-    if (this._autoHideTimer) {
-      clearTimeout(this._autoHideTimer)
-      this._autoHideTimer = null
-    }
-    this.setData({ showControls: false })
-    if (this._wasPlayingBeforeMenu && this.data.scrollStyle !== 'voice' && !this.data.finished) {
-      if (this.engine && this.engine.current < this.engine.maxOffset) {
-        this.engine.resume()
-        this._resumeForStats()
-        this.setData({ playing: true, finished: false })
-      }
-    }
-    this._wasPlayingBeforeMenu = false
-  },
-
-  /** 面板内点击吸收冒泡，避免误触关闭菜单 */
-  noop() {},
-
-  /**
-   * 统一定义「暂停/恢复」时对 stats 的成对调用（P2-2）。
-   * stats.onPause/onResume 自身已对 running 状态幂等保护，这里集中收口，
-   * 避免菜单/手势/拖动/进度条各处的暂停与恢复漏配对，导致复盘口径失真。
-   */
-  _pauseForStats() {
-    if (this.stats) this.stats.onPause()
-  },
-  _resumeForStats() {
-    if (this.stats) this.stats.onResume()
-  },
-
-  /**
-   * 菜单自动收起：横屏时底部菜单会盖掉两三行台词，
-   * 播放中 6 秒无操作就自己收起来（需求 1）。
-   */
-  _scheduleAutoHide() {
-    if (this._autoHideTimer) {
-      clearTimeout(this._autoHideTimer)
-      this._autoHideTimer = null
-    }
-    if (!this.data.showControls) return
-    this._autoHideTimer = setTimeout(() => {
-      this._autoHideTimer = null
-      // 呼出菜单会先暂停（_openControls），故 playing 恒为 false。
-      // 自动收起以「呼出前是否在播放」为准：原本在滚 → 6s 无操作自动收起并按
-      // _closeControls 恢复滚动（需求 1：播放中呼出菜单不挡台词）；
-      // 原本就暂停 → 仅收起菜单，不擅自恢复。
-      if (this._wasPlayingBeforeMenu) {
-        this._closeControls()
-      } else {
-        this.setData({ showControls: false })
-      }
-    }, MENU_AUTO_HIDE_MS)
-  },
-
-  /** 菜单里任何一次操作都顺延自动收起倒计时 */
-  _pokeMenu() {
-    if (this.data.showControls) this._scheduleAutoHide()
-  },
-
-  /**
-   * 播放 / 暂停。菜单里的按钮与这里共用同一套逻辑，保证按钮态与实际一致。
-   * 关键：暂停时必须同时取消倒计时，否则倒计时结束会重新 _startScroll，
-   * 表现就是「点了暂停没反应（甚至菜单被关掉），过两秒又自己滚起来」。
-   *
-   * 需求 2 修复：菜单呼出时会先暂停（见 _openControls），所以菜单打开时 playing 恒为 false，
-   * 按钮始终表现为「播放/继续」且状态可控，不再出现「点了失效」的错觉；
-   * 在菜单内点「播放」会直接收起菜单，让用户看清滚动。
-   */
-  onTapPlay() {
-    this._clearCountdown()
-    if (this.data.playing) {
-      // 暂停（匀速 / 声控通用）
-      this.engine.pause()
-      this._pauseForStats()
-      this.setData({ playing: false })
-      // 声控模式下手动暂停要同步停掉录音监听，否则 VAD 检测到声音又会把字幕带起来
-      if (this.data.scrollStyle === 'voice' && this.voice.running) {
-        this.voice.stop()
-      }
-    } else {
-      if (this.data.scrollStyle === 'voice') {
-        // 声控跟读：重新唤起监听，由 VAD 决定何时滚动；引擎保持暂停，绝不主动开播。
-        // 滚到底后再点播放：先归零回到开头，再起监听。
-        if (this.engine.progress >= 0.999) {
-          this._wrapped = false
-          this.engine.seekProgress(0)
-        }
-        if (!this.voice.running) this._startVoice()
-        this.setData({ playing: false, finished: false })
-      } else {
-        if (this.engine.progress >= 0.999) {
-          this._wrapped = false // 从头再来：回到「首圈开篇留空」语义
-          this.engine.seekProgress(0)
-          this._startScroll(true)
-        } else {
-          this.engine.start()
-          this._resumeForStats()
-          this.setData({ playing: true, finished: false })
-        }
-      }
-      // 在菜单里点播放就收起菜单，避免按钮被遮罩盖住造成「点了没反应」的错觉
-      if (this.data.showControls) {
-        this.setData({ showControls: false })
-        this._wasPlayingBeforeMenu = false
-      }
-    }
-    this._pokeMenu()
-  },
-
-  onTapRestart() {
-    this._lastSection = -1
-    this._seekTo(0)
-    this.setData({ finished: false })
-    this._startScroll(true)
-  },
-
-  /** 速度 +/- 步进（上限 400，见 prefs.SPEED_MAX） */
-  onTapSpeed(e) {
-    const delta = Number(e.currentTarget.dataset.delta) || 0
-    this._applySpeed((this.data.speed || 50) + delta)
-  },
-
-  /** 速度滑块拖动（需求 5：在提词台直接选速度） */
-  onSlideSpeed(e) {
-    const v = Number(e.detail.value)
-    if (!isFinite(v)) return
-    this._applySpeed(v)
-  },
-
-  _applySpeed(v) {
-    const next = Math.round(
-      util.clamp(v, prefsEngine.SPEED_MIN, prefsEngine.SPEED_MAX)
-    )
-    const px = pxPerSecondOf(next)
-    app.updatePrefs({ speed: next })
-    this.engine.setSpeed(px)
-    // 统计里的语速反推用的是 px/s，不跟着更新会让复盘里的字速停在旧值
-    if (this.stats) this.stats.pxPerSecond = px
-    this.setData({ speed: next })
-    this._pokeMenu()
-  },
-
-  /** 横屏 / 竖屏切换（需求 5） */
-  onToggleOrientation() {
-    const next = this.data.orientation === 'landscape' ? 'portrait' : 'landscape'
-    app.updatePrefs({ orientation: next })
-    this.setData({ orientation: next })
-    this._applyOrientation(next)
-    util.toast(next === 'landscape' ? '已切换横屏' : '已切换竖屏')
-    // 部分机型 setPageOrientation 不触发 onResize，兜底重排一次
-    setTimeout(() => {
-      if (this._launched && this.allLines.length) this._relayoutKeepProgress()
-      // 横屏下菜单仍在开，就按新可视区高度重新适配
-      if (this.data.showControls) this._fitMenuToScreen()
-    }, 400)
-    this._pokeMenu()
-  },
-
-  /**
-   * 角色高亮开关（只给名字上色，台词保持正文色）。
-   * 2026-10-27：「名字+台词」整行高亮已下线，原来两个互斥按钮合并成这一个开关。
-   * 与编辑页 / 设置页同源（prefs.roleHighlight），且统一走 smartPatch ——
-   * 总闸开着时手动开高亮会自动解除总闸，绝不出现「总闸开 + 高亮开」的矛盾状态。
-   */
-  onToggleRoleHighlight() {
-    const next = !this.data.roleHighlight
-    const cur = (app.globalData && app.globalData.prefs) || prefsEngine.load()
-    const p = app.updatePrefs(prefsEngine.smartPatch(cur, 'roleHighlight', next))
-    this.setData({ roleHighlight: p.roleHighlight !== false })
-    this._relayoutKeepProgress()
-    this._pokeMenu()
-  },
-
-  /**
-   * 程序化设定「角色显示过滤」（滚动页无角色选择 UI，配置源在编辑页）：
-   * def 为角色名数组/Set/{names}/{ids}；空/无效 → 显示全部。
-   * 编辑页保存的 script.roleDisplay 会在 _parseAndLayout 经 _roleDisplayFilter 自动应用。
-   */
-  onSetRoleFilter(def) {
-    // [] / null 语义统一：null = 全显；[] = 显式无显示；非空 = 仅显示指定角色
-    if (def === null) this.roleFilter = null
-    else if (!def || !def.length) this.roleFilter = new Set()
-    else this.roleFilter = roleEngine.resolveRoleFilter(def, this.allRoles || [], this.allAliases || {})
-    this._applyRoleFilter()
-  },
-
-  _applyRoleFilter() {
-    // 兜底：一键关闭智能功能时角色过滤整体失效——不论外部传入何种过滤集合，
-    // 一律清空为「显示全部」，保证台词 100% 完整（与 _parseAndLayout 口径一致）。
-    const prefs = Object.assign({}, prefsEngine.DEFAULTS, app.globalData.prefs || prefsEngine.load())
-    if (prefs.smartOff) this.roleFilter = null
-    const wasPlaying = this.data.playing
-    if (this.engine) this.engine.pause()
-    this.displayLines = roleEngine.filterLinesByRole(this.allLines, this.roleFilter)
-    if (this.roleFilter && this.roleFilter.size > 0 && this.displayLines.length === 0) {
-      this.roleFilter = null
-      this.displayLines = this.allLines
-      util.toast('所选角色无台词，已显示全部')
-    }
-    const lh = this.data.lineHeightPx || 60
-    this.contentHeight = this.displayLines.length * lh
-    this.setData({
-      contentHeight: this.contentHeight,
-      playing: false,
-      finished: false
-    })
-    if (this.engine) {
-      this.engine.configure(
-        lh,
-        this.contentHeight,
-        this.data.viewportHeight || 600,
-        this.engine.pxPerSecond,
-        this.engine.guideOffset
-      )
-      this.engine.loop = !!this.data.loop
-      this.engine.seekProgress(0)
-      this._syncOffsetFromEngine()
-    }
-    this._updateVisible(true)
-    if (this.roleFilter && this.roleFilter.size) {
-      util.toast('仅显示：' + Array.from(this.roleFilter).join('、'))
-    } else if (wasPlaying) {
-      util.toast('已显示全部台词')
-    }
-  },
-
-  /**
-   * 编辑页「角色显示选择」配置 → 显示过滤集合。
-   * 读台本 script.roleDisplay（角色标准名数组，空/缺省=显示全部），
-   * 经 resolveRoleFilter 解析成与 line.role 精确匹配的标准名集合。
-   */
-  _roleDisplayFilter() {
-    const rd = this.script && this.script.roleDisplay
-    // 未配置（老台本 / 新建未保存）：兼容全显
-    if (rd === undefined || rd === null) return null
-    // 已配置但为空数组：用户显式「取消全选」→ 无角色可显示
-    if (!Array.isArray(rd) || !rd.length) return new Set()
-    const set = roleEngine.resolveRoleFilter(rd, this.allRoles || [], this.allAliases || {})
-    // 非空数组含有效角色 → 仅显示这些；全是失效名（角色被合并/删除）→ 回退全显，不误清空整屏
-    return set && set.size ? set : null
-  },
-
-  /** 菜单里的三套一键文字/背景预设（需求 11） */
-  onTapThemePreset(e) {
-    const key = e.currentTarget.dataset.key
-    const preset = (prefsEngine.PRESET_THEMES || []).filter((t) => t.key === key)[0]
-    if (!preset) return
-    // 预设整体接管配色：清掉自定义色，避免两者打架
-    app.updatePrefs({ colorScheme: key, bgColor: null, textColor: null })
-    this.setData({ colorScheme: key })
-    this._relayoutKeepProgress()
-    util.toast(preset.name)
-    this._pokeMenu()
-  },
-
-  onTapFontSize(e) {
-    const delta = Number(e.currentTarget.dataset.delta)
-    const prefs = app.globalData.prefs || prefsEngine.load()
-    const next = util.clamp((prefs.fontSize || 3) + delta, 1, 5)
-    app.updatePrefs({ fontSize: next })
-    const progress = this.engine.progress
-    this._parseAndLayout()
-    this._seekTo(progress)
-    // 字号变了菜单可能更高，重新按可视区适配（可上下滚动看全）
-    if (this.data.showControls) this._fitMenuToScreen()
-  },
-
-  onToggleMirror() {
-    const next = !this.data.mirror
-    app.updatePrefs({ mirror: next })
-    this.setData({ mirror: next })
-  },
-
-  onToggleGuide() {
-    const next = !this.data.showGuide
-    app.updatePrefs({ showGuide: next })
-    this.setData({ showGuide: next })
-  },
-
-  onToggleFillLight() {
-    const next = !this.data.fillLight
-    app.updatePrefs({ fillLight: next })
-    this.setData({ fillLight: next })
-    if (next) {
-      wx.setScreenBrightness({ value: 1 })
-    } else {
-      wx.setScreenBrightness({ value: -1 })
-    }
-  },
-
-  onTapSettings() {
-    this._fromSettings = true
-    wx.navigateTo({ url: '/pages/settings/settings' })
-  },
-
-  onTapBack() {
-    wx.navigateBack()
-  },
-
-  /** 循环播放开关（无缝无限滚动） */
-  onToggleLoop() {
-    const next = !this.data.loop
-    app.updatePrefs({ loop: next })
-    this.engine.loop = next
-    this.setData({ loop: next })
-    this._pokeMenu()
-  },
-
-  /**
-   * 切换滚动方式（两种）：
-   *   smooth 匀速自动滚动（默认）——连续匀速上滚，无缝无限循环
-   *   voice  声控跟读——检测到说话才滚
-   */
-  async onSetScrollStyle(e) {
-    const key = e.currentTarget.dataset.key
-    if (key === this.data.scrollStyle) {
-      this._pokeMenu()
-      return
-    }
-    if (key === 'voice') {
-      const ok = await vad.requestAuth()
-      if (!ok) {
-        wx.showModal({
-          title: '声控跟读不可用',
-          content:
-            '需要麦克风权限，且必须在微信公众平台配置《隐私保护指引》并声明「麦克风/录音」用途。模拟器无法使用麦克风，请用手机真机预览。',
-          showCancel: false,
-          confirmText: '知道了'
-        })
-        return
-      }
-    }
-    this._applyScrollStyle(key)
-  },
-
-  /** 真正应用滚动方式（内部用，不弹权限框） */
-  _applyScrollStyle(key) {
-    const style = key === 'voice' ? key : 'smooth'
-    // 离开声控：停掉录音，避免后台一直占着麦克风
-    if (style !== 'voice' && this.voice && this.voice.running) this.voice.stop()
-    app.updatePrefs({
-      scrollStyle: style,
-      scrollMode: style === 'voice' ? 'voice' : 'auto',
-      voiceControl: style === 'voice'
-    })
-    this.setData({
-      scrollStyle: style,
-      voiceEnabled: style === 'voice',
-      voiceLevel: style === 'voice' ? this.data.voiceLevel : 0,
-      voiceTip: ''
-    })
-
-    if (style === 'voice') {
-      // 声控：先停下，等 VAD 检测到说话由 onVoice 回调 resume
-      this.engine.pause()
-      this.setData({ playing: false })
-      this._startVoice()
-    } else if (this.data.playing) {
-      // 匀速保持当前播放状态
-      this.engine.resume()
-      this.setData({ playing: true })
-    }
-    util.toast(style === 'smooth' ? '匀速自动滚动' : '声控跟读')
-    this._pokeMenu()
-  },
-
-  /**
-   * 进度条拖动中（bindchanging，连续触发）：暂停引擎、按拖动位置 seek，
-   * 并记录「拖动前是否在播放」，松手后据此决定是否续播。
-   */
-  onSeekChanging(e) {
-    const v = e.detail.value || 0
-    const p = v / 100
-    if (!this.engine) return
-    if (!this._seeking) {
-      this._seeking = true
-      this._resumeAfterSeek = this.data.playing
-      if (this.engine.playing) {
-        this.engine.pause()
-        this.setData({ playing: false })
-        if (this._resumeAfterSeek) this._pauseForStats()
-      }
-    }
-    this.engine.seekProgress(p)
-    this.setData({ progressValue: v })
-    this._syncOffsetFromEngine()
-    this._updateVisible(true)
-  },
-
-  /**
-   * 进度条拖动结束（bindchange，松手触发）：定位到最终位置，
-   * 若拖动前在播放则继续匀速滚动。
-   */
-  onSeekChange(e) {
-    const v = e.detail.value || 0
-    const p = v / 100
-    if (!this.engine) return
-    this.engine.seekProgress(p)
-    this.setData({ progressValue: v })
-    this._syncOffsetFromEngine()
-    this._updateVisible(true)
-    this._seeking = false
-    if (this._resumeAfterSeek && this.engine.current < this.engine.maxOffset) {
-      this.engine.resume()
-      this._resumeForStats()
-      this.setData({ playing: true, finished: false })
-    }
-    this._savePosition()
-  },
-
-  // ---------- 手动翻页（手势拖动 + 上/下一段） ----------
-
-  onTouchStart(e) {
-    // 取消挂起中的「单击→暂停」定时器：用户若先轻点一下（单击 timer 已挂起 260ms），
-    // 紧接着开始拖动调位，则本次手势应彻底接管，避免 260ms 后挂起的单击又把刚调好的
-    // 字幕暂停住（审查报告 P3-5）。
-    if (this._tapTimer) {
-      clearTimeout(this._tapTimer)
-      this._tapTimer = null
-    }
-    // 注意：这里【不能】清零 _lastTapAt。真机上每次点击前都会先触发 onTouchStart，
-    // 若在此把它置 0，双击的第二下 onTapScreen 读到 _lastTapAt=0（falsy）会被误判成
-    // 单击，导致双击永远打不开菜单、或双击打开的菜单被随后 260ms 的挂起单击 onTapPlay
-    // 误隐藏（审查发现的回归缺陷）。取消挂起的单击定时器即可防止「拖动后被暂停」，
-    // 而保留 _lastTapAt 才能让第二下仍落在双击窗口内、被正确识别为双击。
-    // 记下触摸前的播放状态：松手时只有「本来就在播」才自动续播。
-    // 否则已暂停时想轻点屏幕唤出控制栏，会被 onTouchEnd 误判成「继续播放」。
-    this._touchWasPlaying = !!this.data.playing
-    if (this.engine) this.engine.pause()
-    // 仅当本来在播时才记入统计暂停，避免「已暂停时轻点」误增 pausedCount（P2-2）
-    if (this._touchWasPlaying) this._pauseForStats()
-    this._touching = true
-    this._dragged = false
-    this._touchStartY = e.touches[0].clientY
-    this._touchStartOffset = this.engine ? this.engine.current : 0
-  },
-
-  onTouchMove(e) {
-    if (!this._touching || !this.engine) return
-    const dy = e.touches[0].clientY - this._touchStartY
-    if (Math.abs(dy) > 6) this._dragged = true
-    // 手指上滑 dy<0 -> offset 增大（内容上移）；下滑 dy>0 -> offset 减小
-    this.engine.syncTo(this._touchStartOffset - dy)
-    this._syncOffsetFromEngine()
-    this._updateVisible(true)
-  },
-
-  onTouchEnd() {
-    if (!this._touching) return
-    this._touching = false
-    if (this._dragged) {
-      this._dragged = false
-      this._suppressTap = true
-      setTimeout(() => {
-        this._suppressTap = false
-      }, 350)
-    }
-    // 自动滚动时手动拖动定位：松手后继续滚动（需求：手动调位不要停）。
-    // 去掉 scrollMode==='auto' 的冗余判断（playing 已隐含），仅排除声控与已滚到末尾。
-    // 配合「有效视口」修复后 maxOffset 正确，拖动不会再误触「已到末尾」而停在半路。
-    if (this._touchWasPlaying && !this.data.voiceEnabled) {
-      if (this.engine.current < this.engine.maxOffset) {
-        this.engine.resume()
-        this._resumeForStats()
-        this.setData({ playing: true, finished: false })
-      }
-    }
-    this._savePosition()
-  },
-
-  /**
-   * 需求 10：菜单里的「上一个 / 下一个」不再跳段落，改为切换台本。
-   * 实测在提词现场跳段落几乎用不上（台词是连着念的），而换台本是高频动作。
-   */
   onTapPrevScript() {
     this._switchScript(-1)
   },
@@ -1457,45 +376,25 @@ Page({
     this._switchScript(1)
   },
 
-  /**
-   * 边界策略（明确「不循环」）：到头就把按钮置灰，而不是绕回另一端。
-   * 拍摄现场误触绕回第 1 集会直接打乱节奏，所以禁用优于循环。
-   * 置灰之外 JS 侧仍再校验一次，防止角标未刷新等异常情况下越界。
-   */
   _switchScript(dir) {
-    // 切换锁：连点或上一次还没加载完时，直接忽略后到的点击。
-    // 否则会叠加多个倒计时定时器、重复落盘、甚至并发 _parseAndLayout。
     if (this._switching) return
-
     const all = this._scriptOrder()
     if (!all.length) {
-      this.setData({ hasPrevScript: false, hasNextScript: false, scriptPosText: '' })
       util.toast('还没有台本，先回首页新建')
       return
     }
     if (all.length === 1) {
-      // 只有一篇时两个方向都无处可去：按钮本就置灰，被代码直接调用时给一次明确反馈，
-      // 不做「静默 return」那种点了没反应的处理
-      this.setData({ hasPrevScript: false, hasNextScript: false })
       util.toast('只有一个台本')
       return
     }
-
     let idx = all.findIndex((s) => s.id === this.scriptId)
-    if (idx < 0) {
-      // 当前台本已不在列表（例如在首页被删掉了）：先归位到对应端点，
-      // 而不是直接 return 让按钮「可点却毫无反应」（原实现就是这个坑）
-      idx = dir > 0 ? -1 : all.length
-    }
-
+    if (idx < 0) idx = dir > 0 ? -1 : all.length
     const nextIdx = idx + dir
     if (nextIdx < 0 || nextIdx >= all.length) {
-      // 边界：刷新一次角标与按钮态（列表可能刚变过），再给明确提示，不切换
       this._updateScriptPos()
       util.toast(dir > 0 ? '已经是最后一个台本' : '已经是第一个台本')
       return
     }
-
     const target = all[nextIdx]
     this._switching = true
     try {
@@ -1503,174 +402,1770 @@ Page({
       this._loadScript(target.id, { fresh: true })
       util.toast(target.title)
     } catch (e) {
-      // 加载失败也必须解锁，否则两个按钮会永久失效
       this._switching = false
       util.toast('切换失败，请重试')
     }
   },
 
-  /**
-   * 切换前的状态归零：明确「重置什么 / 保留什么」。
-   *
-   * 重置（与具体台本绑定的运行态）：引擎偏移、进度条、结束标记、续播进度、
-   *   统计收集器、段落游标、无限滚动回绕标记、倒计时、触摸/拖动中间态。
-   * 保留（用户偏好，_loadScript 会重新从 prefs 读回来）：字号、行高、速度、
-   *   配色、镜像、参考线、补光、横竖屏、声控开关、无限滚动。
-   */
   _prepareSwitch() {
-    // 先把当前台本的进度与复盘落盘，再切走，否则这一遍就白读了
-    if (this.engine) this.engine.pause()
-    this.setData({ playing: false })
+    this._pause()
     this._finalizeStats(false)
     this._savePosition()
-
-    // 倒计时必须先掐掉：上一轮 interval 若还活着，会在新台本加载后继续触发
-    // _startScroll，表现为「切完立刻自己开跑」或「倒计时一次跳两格」
-    if (this._countdownTimer) {
-      clearInterval(this._countdownTimer)
-      this._countdownTimer = null
-    }
-
+    this._clearCountdown()
+    this._seekPx(0)
     this.setData({
-      showControls: false,
       finished: false,
-      resumePosition: 0,
       progress: 0,
       progressValue: 0,
       progressText: '0%',
-      countdown: 0
+      resumePosition: 0,
+      showMenu: false,
+      showControls: false
     })
-    this.stats.reset()
+    if (this.stats) this.stats.reset()
     this._statSaved = false
-    this._lastSection = -1
-    this._wrapped = false
-    this._touching = false
-    this._dragged = false
-    this._suppressTap = false
-    this._touchWasPlaying = false
-    this._seeking = false
-    this._resumeAfterSeek = false
   },
 
-  /** 段落跳转：当前版本菜单里已改为切换台本，这里保留给「跳转到指定段」内部使用 */
-  _jumpSection(dir) {
-    const lines = this.displayLines
-    if (!lines || !lines.length) return
-    const curLine = this.engine ? this.engine.currentLineIndex : 0
-    const cur = lines[Math.min(Math.max(curLine, 0), lines.length - 1)]
-    const curSec = cur ? cur.sectionIndex : 0
-    let target = dir > 0 ? -1 : 0
-    if (dir > 0) {
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].sectionIndex > curSec) {
-          target = i
-          break
-        }
+  /* ======================================================================
+   * 排版
+   * ==================================================================== */
+
+  /**
+   * 重新解析 + 虚拟列表渲染。
+   * @param {object} [opts] keepProgress=true 时保留当前进度
+   */
+  _parseAndLayout(opts) {
+    const keep = !!(opts && opts.keepProgress)
+    if (!this.script) return
+
+    const s = this.data.settings || settingsEngine.DEFAULTS
+    const fontSize = s.fontSize
+    const lineHeightPx = settingsEngine.lineHeightPxOf(s)
+    const letterSpacing = s.letterSpacing
+
+    // 可用宽度 = 屏宽 × 台词区宽% − 左右 16px 内边距 − 安全区（横屏刘海/圆角会吃掉几十 px）
+    // 之前没扣安全区：横屏每行多算 2 个字 → CSS 折成两行 → 行高又是写死的 → 台词重叠。
+    const padL = this._safePadLeft()
+    const padR = this._safePadRight()
+    const usable = Math.max(
+      80,
+      (this.winWidth * s.contentWidth) / 100 - settingsEngine.TEXT_PADDING_X * 2 - padL - padR
+    )
+    // 4px 余量：给字体度量的亚像素误差留点空间（只在「刚好塞满一行」的临界值上生效，
+    // 不影响常规字号的行宽）。行盒本身用 min-height，所以真折行也不会叠字。
+    const charsPerLine = Math.max(6, Math.floor((usable - 4) / (fontSize + letterSpacing)))
+
+    const legacy = prefsEngine.load()
+    const smartOff = !!legacy.smartOff
+    // 角色高亮「开没开」以 prefs 为准（编辑页角色面板改的就是它），再叠加菜单里的
+    // 每方向设置与智能总闸 —— 三处任意一处关掉都不出颜色，避免"开关关着却满屏颜色"。
+    const wantRole = s.roleHighlight !== false && legacy.roleHighlight !== false && !smartOff
+
+    const parsed = parser.parseScript(this.script.content, {
+      charsPerLine: charsPerLine,
+      manualRoles: this.script.manualRoles || [],
+      roleBlacklist: this.script.roleBlacklist || [],
+      roleAlias: this.script.roleAlias || {},
+      roleHighlight: wantRole,
+      isDark: !this._isLightBg(s.backgroundColor),
+      roleColorOverride: this.script.roleColorOverride || {}
+    })
+    this.allAliases = parsed.alias || {}
+
+    const textColor = s.textColor
+    const lines = parsed.lines.map((line, i) => {
+      const roleColor = line.role ? roleEngine.colorOf(parsed.roles, line.role) : null
+      const role = wantRole && line.role ? line.role : null
+      return {
+        _i: i,
+        role: role,
+        // 段首行才带角色名前缀（内联渲染）；续行只显示正文
+        showRole: !!(role && line.isSectionStart !== false),
+        rolePrefix: role && line.rolePrefix ? line.rolePrefix : '',
+        text: line.text,
+        body: line.body !== undefined ? line.body : line.text,
+        color: role && roleColor ? roleColor : textColor,
+        prefixColor: role && roleColor ? roleColor : textColor,
+        bodyColor: textColor,
+        roleBg: role && roleColor ? hexToRgba(roleColor, 0.2) : 'rgba(255,255,255,0.12)',
+        sectionIndex: line.sectionIndex
       }
-      if (target < 0) target = lines.length - 1
+    })
+
+    this.allLines = lines
+    this.allRoles = parsed.roles
+    this.roleFilter = smartOff ? null : this._roleDisplayFilter()
+    this.displayLines = smartOff
+      ? lines
+      : roleEngine.filterLinesByRole(lines, this.roleFilter)
+
+    // ── 超长稿守卫 ────────────────────────────────────────────────────
+    // 全量渲染的代价是整篇行对象在一次 setData 里过桥，微信单次 setData
+    // 上限 1024KB，5000 行 ≈ 1.6MB 会直接白屏。超过 BLOB_LINES 就降级成
+    // 「一整块纯文本」（内容一字不丢，DOM 只剩 1 个节点，setData 只有几 KB）。
+    const BLOB_LINES = 1200
+    const blobMode = this.displayLines.length > BLOB_LINES
+    if (blobMode) {
+      const blobText = String(this.script.content || '').replace(/\r\n?/g, '\n')
+      let visualLines = 0
+      for (const seg of blobText.split('\n')) {
+        visualLines += Math.max(1, Math.ceil(seg.length / charsPerLine))
+      }
+      this._blobVisualLines = visualLines
+      // text 留空，全文只放 body 一份，避免 setData 体积翻倍
+      this.displayLines = [
+        {
+          _i: 0,
+          blob: true,
+          role: null,
+          showRole: false,
+          rolePrefix: '',
+          text: '',
+          body: blobText,
+          color: textColor,
+          prefixColor: textColor,
+          bodyColor: textColor,
+          roleBg: 'rgba(255,255,255,0.12)',
+          sectionIndex: 0
+        }
+      ]
+      this._blobLineCount = lines.length
     } else {
-      for (let i = lines.length - 1; i >= 0; i--) {
-        if (lines[i].sectionIndex < curSec) {
-          target = i
-          break
-        }
-      }
-      // 上面扫到的是「上一段的最后一行」。要继续往前回溯到该段的第一行，
-      // 否则点「上一段」会落在上一段末尾，观感像是跳过了整段（下一段是对的，两个方向不对称）。
-      if (target > 0) {
-        const sec = lines[target].sectionIndex
-        while (target > 0 && lines[target - 1].sectionIndex === sec) target--
-      }
-      if (target < 0) target = 0
+      this._blobVisualLines = 0
+      this._blobLineCount = 0
     }
-    const offset = Math.max(0, Math.min(this.engine.maxOffset, target * this.data.lineHeightPx))
-    this.engine.syncTo(offset)
+
+    // 行高地形图：每行按「估算的视觉行数」记高度，供虚拟列表定位。
+    // 绝大多数行是 1 行高；角色名特别长的行会被 CSS 折成 2 行，
+    // 渲染层已经用 min-height（不写死 height）让盒子自己撑开 —— 不会压到下一行。
+    let estTextHeight
+    if (blobMode) {
+      // 纯文本块只有 1 个节点，不做行高地形图（定位由 .tp-blob-line 自己撑高）
+      this._lineTops = []
+      this._lineHs = []
+      estTextHeight = this._blobVisualLines * lineHeightPx
+    } else {
+      estTextHeight = this._buildLineMetrics(lineHeightPx, charsPerLine)
+    }
+    const textHeight = estTextHeight
+    this.contentHeight = textHeight
+    const startPad = this._startPadOf(s.startPosition)
+    const endPad = Math.round(this.winHeight * 0.75)
+    const totalScroll = Math.max(0, startPad + textHeight + endPad - this.winHeight)
+
+    // 初始可见窗口：虚拟列表只渲染视口附近的行，避免 lines + visibleLines
+    // 两份全量同时进一次 setData（800 行稿会逼近 1024KB 上限，初始就卡一下）。
+    const windowCount = Math.ceil(this.winHeight / lineHeightPx) + 24
+    const initialVisible = blobMode ? this.displayLines : this.displayLines.slice(0, windowCount)
+    // 首屏切片的估算高度，供 _measureContent 标定全文高度用
+    this._estSliceH = blobMode
+      ? textHeight
+      : this._sliceHeight(0, initialVisible.length)
+
+    const patch = {
+      lines: this.displayLines,
+      visibleLines: initialVisible,
+      visibleStart: 0,
+      visibleTop: 0,
+      fontSizePx: fontSize,
+      lineHeightPx: lineHeightPx,
+      roleFontSize: Math.max(10, Math.round(fontSize * 0.62)),
+      roleLineHeight: Math.max(16, Math.round(fontSize * 0.62 * 1.7)),
+      letterSpacing: letterSpacing,
+      contentWidth: s.contentWidth,
+      textAlign: s.textAlign,
+      fontFamily: settingsEngine.FONT_FAMILIES[s.fontFamily] || settingsEngine.FONT_FAMILIES.system,
+      fontFamilyLabel: settingsEngine.fontFamilyLabel(s.fontFamily),
+      fontBold: !!s.fontBold,
+      marginHorizontal: Math.round(((100 - s.contentWidth) / 100) * this.winWidth / 2),
+      bg: s.backgroundColor,
+      textColor: textColor,
+      isDark: !this._isLightBg(s.backgroundColor),
+      mirror: !!s.mirror,
+      showGuide: s.showCue !== false,
+      showCue: s.showCue !== false,
+      cuePosition: s.cuePosition,
+      focus: !!s.focus,
+      loop: !!s.loop,
+      showClocks: s.showClocks !== false,
+      roleHighlight: wantRole,
+      smartOff: smartOff,
+      keepScreenOn: s.keepScreenOn !== false,
+      fillLight: !!s.fillLight,
+      contentHeight: textHeight,
+      textHeight: textHeight,
+      startPad: startPad,
+      endPad: endPad,
+      totalScroll: totalScroll,
+      viewportHeight: this.winHeight,
+      pctSpeed: this._pctOfSpeed(s),
+      pctFontSize: pct(s.fontSize, settingsEngine.FONT_SIZE_MIN, settingsEngine.FONT_SIZE_MAX),
+      pctLineHeight: pct(s.lineHeight, settingsEngine.LINE_HEIGHT_MIN, settingsEngine.LINE_HEIGHT_MAX),
+      pctLetterSpacing: pct(s.letterSpacing, settingsEngine.LETTER_SPACING_MIN, settingsEngine.LETTER_SPACING_MAX),
+      pctCue: pct(s.cuePosition, settingsEngine.CUE_MIN, settingsEngine.CUE_MAX),
+      pctWidth: pct(s.contentWidth, settingsEngine.CONTENT_WIDTH_MIN, settingsEngine.CONTENT_WIDTH_MAX),
+      pctCountdown: pct(s.countdown, 0, settingsEngine.COUNTDOWN_MAX),
+      speedText: settingsEngine.speedLabel(s),
+      speedUnitText: settingsEngine.speedUnitLabel(s),
+      speed: s.speedUnit === 'px' ? s.speed : s.speedCpm,
+      speedMin: s.speedUnit === 'px' ? timeline.LEGACY_SPEED_MIN : timeline.CPM_MIN,
+      speedMax: s.speedUnit === 'px' ? timeline.LEGACY_SPEED_MAX : timeline.CPM_MAX,
+      colorWarning: settingsEngine.isColorTooClose(s.textColor, s.backgroundColor),
+      scrollStyle: s.voiceControl ? 'voice' : 'smooth',
+      scrollMode: s.voiceControl ? 'voice' : 'auto',
+      voiceEnabled: !!s.voiceControl,
+      blobMode: blobMode,
+      blobLineCount: this._blobLineCount
+    }
+    this.setData(patch)
+
+    // 用估算高度先配一遍引擎（真实高度由 _measureContent 量出后 _finishLayout 再配一次）
+    this._configureEngine()
+
+    if (blobMode && !this._blobToasted) {
+      this._blobToasted = true
+      util.toast(`稿件共 ${this._blobLineCount} 行，已切换纯文本模式（暂不支持角色高亮）`)
+    }
+
+    // 量真实文本高度后重配引擎 + 落定 totalScroll
+    this._measureContent(keep)
+  },
+
+  _isLightBg(hex) {
+    const rgb = settingsEngine.colorToRgb(hex)
+    if (!rgb) return false
+    const lum = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255
+    return lum > 0.6
+  },
+
+  /** 文本高度（内联角色名，等行高）：blob 模式按视觉行数，其余按行数 */
+  _estimateHeight(lines, lineHeightPx) {
+    if (lines.length === 1 && lines[0] && lines[0].blob) {
+      return (this._blobVisualLines || 1) * lineHeightPx
+    }
+    return lines.length * lineHeightPx
+  },
+
+  /** 起播留白：浅纸 placeholder.upper —— middle = 50vh、bottom = 92vh */
+  _startPadOf(pos) {
+    if (pos === 'bottom') return Math.round(this.winHeight * 0.92)
+    return Math.round(this.winHeight * 0.5)
+  },
+
+  /* ── 安全区（刘海 / 挖孔 / 圆角 / Home 指示条）─────────────────────
+   * 两个用途，必须共用同一份数据，否则会互相打架：
+   *   1) 排版：CSS 里台词行要留 padding，JS 估算每行字数也要扣掉同一份，
+   *      两边不一致 → 每行多算 2 个字 → 真机折行 → 叠字。
+   *   2) 悬浮元素：时钟、进度条、菜单钮要避开刘海与底部横条。
+   *
+   * ⚠️ 不能只靠 CSS 的 env(safe-area-inset-*)：
+   *   小程序里该变量在部分安卓机型恒为 0（有些 iOS 场景也是），
+   *   而 wx.getWindowInfo().safeArea 是稳定可用的。所以以 JS 为准，env() 只当兜底。 */
+  _readSafeArea() {
+    let info = null
+    try {
+      info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+    } catch (e) {
+      info = null
+    }
+    const w = (info && info.windowWidth) || this.winWidth || 375
+    const h = (info && info.windowHeight) || this.winHeight || 667
+    const sa = (info && info.safeArea) || null
+    const statusBar = (info && info.statusBarHeight) || 0
+
+    this._safeLeft = sa && sa.left > 0 ? Math.round(sa.left) : 0
+    this._safeRight = sa && sa.right > 0 && sa.right < w ? Math.round(w - sa.right) : 0
+    // 顶部：safeArea.top 已经把刘海/挖孔/状态栏都算进去了；
+    // 拿不到 safeArea 时退而求其次，至少让出状态栏高度（否则时钟会压在状态栏下面）。
+    this._safeTop = sa && sa.top > 0 ? Math.round(sa.top) : Math.round(statusBar)
+    // 底部：iPhone 的 Home 指示条 / 安卓手势条
+    this._safeBottom =
+      sa && sa.bottom > 0 && sa.bottom <= h ? Math.max(0, Math.round(h - sa.bottom)) : 0
+    return {
+      top: this._safeTop,
+      bottom: this._safeBottom,
+      left: this._safeLeft,
+      right: this._safeRight
+    }
+  },
+
+  /** 把安全区同步到 data（WXML 用 CSS 变量消费，改一次全页面生效） */
+  _syncSafeInsets() {
+    const s = this._readSafeArea()
+    if (
+      this.data.safeTop === s.top &&
+      this.data.safeBottom === s.bottom &&
+      this.data.safeLeft === s.left &&
+      this.data.safeRight === s.right
+    ) return s
+    this.setData({
+      safeTop: s.top,
+      safeBottom: s.bottom,
+      safeLeft: s.left,
+      safeRight: s.right
+    })
+    return s
+  },
+
+  _safePadLeft() {
+    if (this._safeLeft === undefined) this._readSafeArea()
+    return this._safeLeft || 0
+  },
+
+  _safePadRight() {
+    if (this._safeRight === undefined) this._readSafeArea()
+    return this._safeRight || 0
+  },
+
+  /**
+   * 估算一行会占几个视觉行（1–4）。
+   * 用 parser.visualWidth —— 和切行用的是同一个度量，两边才不会打架。
+   * CSS 侧只给 min-height，所以这里估多了只是多点空白，估少了也不会叠字。
+   */
+  _rowsOfLine(line, charsPerLine) {
+    if (!line || line.blob || !(charsPerLine > 0)) return 1
+    const w = parser.visualWidth((line.rolePrefix || '') + (line.body || ''))
+    if (!(w > 0)) return 1
+    return Math.max(1, Math.min(4, Math.ceil(w / charsPerLine)))
+  },
+
+  /** 生成 _lineTops（每行顶部 y）/ _lineHs（每行高），返回估算文本总高 */
+  _buildLineMetrics(lineHeightPx, charsPerLine) {
+    const list = this.displayLines || []
+    const tops = new Array(list.length)
+    const hs = new Array(list.length)
+    let y = 0
+    for (let i = 0; i < list.length; i++) {
+      const h = this._rowsOfLine(list[i], charsPerLine) * lineHeightPx
+      tops[i] = y
+      hs[i] = h
+      y += h
+    }
+    this._lineTops = tops
+    this._lineHs = hs
+    return y
+  },
+
+  /** 估算 [start, start+count) 这段渲染切片的高度 */
+  _sliceHeight(start, count) {
+    const hs = this._lineHs
+    if (!hs || !hs.length) return 0
+    const from = Math.max(0, Math.min(hs.length, start || 0))
+    const to = Math.max(from, Math.min(hs.length, from + (count || 0)))
+    let sum = 0
+    for (let i = from; i < to; i++) sum += hs[i]
+    return sum
+  },
+
+  /** 二分：给定内容区 y，返回它落在第几行（越界自行钳制） */
+  _indexAtOffset(y) {
+    const tops = this._lineTops
+    if (!tops || !tops.length) return 0
+    let lo = 0
+    let hi = tops.length - 1
+    let ans = 0
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      if (tops[mid] <= y) {
+        ans = mid
+        lo = mid + 1
+      } else {
+        hi = mid - 1
+      }
+    }
+    return ans
+  },
+
+  /** 用当前 textHeight/startPad/endPad 配置滚动引擎 */
+  _configureEngine() {
+    if (!this.engine) return
+    const lineH = this.data.lineHeightPx || 1
+    const totalH = (this.data.startPad || 0) + (this.data.textHeight || 0) + (this.data.endPad || 0)
+    const msPerPx = this._msPerPx()
+    const pxPerSecond = msPerPx > 0 ? 1000 / msPerPx : 0
+    // 结束线 = 一屏高：endOffset = totalH - winHeight = startPad+textH+endPad-winHeight
+    this.engine.configure(lineH, totalH, this.winHeight, pxPerSecond, this.winHeight)
+    // 双保险：configure 内部已写 pxPerSecond，这里再显式推一次。
+    // 万一将来 configure 因为尺寸异常提前返回，速度也不会停留在旧值上。
+    this.engine.setSpeed(pxPerSecond)
+    this.engine.loop = false // loop 重播由页面层处理，不启用引擎无缝回绕
+
+    // 把「引擎实际在用的速度」暴露到视图：菜单里显示成 xx px/s。
+    // 这一项的用途是自证——数字调了以后 px/s 有没有跟着变，一眼就能看出来，
+    // 不用再靠「盯着屏幕猜快慢」。
+    const px = Math.round(pxPerSecond * 10) / 10
+    if (this.data.speedPxPerSec !== px) this.setData({ speedPxPerSec: px })
+  },
+
+  _measureContent(keep) {
+    if (typeof wx.createSelectorQuery !== 'function') {
+      this._finishLayout(this.data.textHeight, keep)
+      return
+    }
+    const self = this
+    // 注意：Page 里不能调 .in(this)（那是自定义组件专用），否则永远拿不到高度
+    // → 文字高度只能靠估算 → 滚动距离与「字/分钟」全部失真。
+    //
+    // 另一个坑：虚拟列表只渲染前 windowCount 行，量到的只是「切片高度」，
+    // 直接当全文高度会让长稿的 totalScroll 只有真实值的一小截（读一半就滑到底）。
+    // 这里用「实测切片 / 估算切片」的比例把估算总高标定成真实总高。
+    wx.createSelectorQuery()
+      .select('.tp-lines')
+      .boundingClientRect((rect) => {
+        const measured = rect && rect.height ? Math.round(rect.height) : 0
+        const estSlice = self._estSliceH || 0
+        const estTotal = self.data.textHeight || 0
+        let h = measured || estTotal
+        if (measured > 0 && estSlice > 0 && estTotal > 0) {
+          h = Math.max(1, Math.round((estTotal * measured) / estSlice))
+        }
+        self._finishLayout(h, keep)
+      })
+      .exec()
+  },
+
+  _finishLayout(textH, keep) {
+    const prevRatio = this.engine ? this.engine.progress : 0
+    const wasPlaying = this.data.status === 'playing'
+    const total = Math.max(0, this.data.startPad + textH + this.data.endPad - this.winHeight)
+
+    this.setData({ textHeight: textH, totalScroll: total })
+    // 用真实高度重配引擎（configure 会 clamp current 到新范围，不会跳）
+    this._configureEngine()
+
+    if (keep || wasPlaying) {
+      this._seekTo(prevRatio)
+      if (wasPlaying) this.engine.start()
+    } else {
+      this._seekPx(Math.min(this.engine ? this.engine.current : 0, total))
+    }
+    this._updateProgress()
+  },
+
+  /** 兼容旧调用：只做一次排版并保留进度 */
+  _relayoutKeepProgress() {
+    const p = this.engine ? this.engine.progress : 0
+    const wasPlaying = this.data.status === 'playing'
+    this._parseAndLayout({ keepProgress: true })
+    if (wasPlaying && !this.data.voiceEnabled) {
+      this.engine.start()
+      this.setData({ playing: true, status: 'playing' })
+    }
+  },
+
+  /** 只渲染视口附近的行，长稿件也不卡 */
+  _updateVisible(force) {
+    const lineH = this.data.lineHeightPx || 1
+    const total = this.displayLines.length
+    if (total <= 0) return
+    // blob 模式只有 1 个整块，无需裁剪
+    if (this.data.blobMode || (total === 1 && this.displayLines[0].blob)) {
+      if (this.data.visibleStart !== 0 || this.data.visibleLines !== this.displayLines) {
+        this.setData({ visibleStart: 0, visibleTop: 0, visibleLines: this.displayLines })
+      }
+      return
+    }
+    const offset = this.engine ? this.engine.current : this.data.offset
+    const startPad = this.data.startPad || 0
+    // 台词首行在内容块的 startPad 处，滚过 startPad 才进入首行
+    // 用行高地形图找起点（折行会让「第几行」和 offset/lineH 不再线性对应）
+    const rawStart = this._indexAtOffset(offset - startPad) - 10
+    const start = Math.max(0, rawStart)
+    const count = Math.ceil(this.winHeight / lineH) + 24
+    if (!force && start === this.data.visibleStart) return
+    // visibleTop 是这一片在「整篇文本坐标系」里的 y。
+    // 少了它，渲染出来的切片会被当成从第 0 行开始，越滚越偏、最后整屏空白。
+    const top = this._lineTops && this._lineTops.length ? this._lineTops[start] || 0 : start * lineH
+    this.setData({
+      visibleStart: start,
+      visibleTop: top,
+      visibleLines: this.displayLines.slice(start, start + count)
+    })
+  },
+
+  /** 把引擎位置同步回视图（seek/reset 后调用） */
+  _syncOffsetFromEngine() {
+    const offset = this.engine ? this.engine.current : 0
+    const p = this.engine ? this.engine.progress : 0
+    this.setData({
+      offset: offset,
+      autoTop: offset,
+      progressText: Math.round(p * 100) + '%',
+      progressValue: Math.round(p * 100)
+    })
+  },
+
+  /* ======================================================================
+   * 速度
+   * ==================================================================== */
+
+  _speedContext() {
+    let charCount = 0
+    for (let i = 0; i < this.displayLines.length; i++) {
+      charCount += timeline.countWeightedChars(this.displayLines[i].body || this.displayLines[i].text)
+    }
+    this._charCount = charCount
+
+    // 每字纵向像素 = 文字总高 ÷ 加权字数。
+    // 这是「字/分钟 → 像素/秒」唯一稳定的桥梁：
+    // 它只跟字号/行距/台词区宽度有关，**跟稿件长短、上下留白无关**。
+    // 旧实现拿 totalScroll（含 0.5 屏起播留白 + 0.75 屏结束留白）当分母，
+    // 短稿被留白稀释 → 算出的每字像素虚高 → 调多快都慢得像没反应。
+    const textH = Number(this.data.textHeight) || 0
+    const pxPerChar = charCount > 0 && textH > 0 ? textH / charCount : 0
+
+    return {
+      charCount: charCount,
+      scrollDistance: this.data.totalScroll,
+      pxPerChar: pxPerChar,
+      windowWidth: this.winWidth
+    }
+  },
+
+  /** 每像素毫秒数：整篇播放时长的唯一来源 */
+  _msPerPx() {
+    const s = this.data.settings || settingsEngine.DEFAULTS
+    const r = timeline.resolveSpeed(s, this._speedContext())
+    if (!isFinite(r.msPerPx) || r.msPerPx <= 0) return 0
+    return r.msPerPx
+  },
+
+  _pctOfSpeed(s) {
+    if (s.speedUnit === 'px') {
+      return pct(s.speed, timeline.LEGACY_SPEED_MIN, timeline.LEGACY_SPEED_MAX)
+    }
+    return pct(s.speedCpm, timeline.CPM_MIN, timeline.CPM_MAX)
+  },
+
+  /* ======================================================================
+   * 播放控制（ScrollEngine 逐帧）
+   * ==================================================================== */
+
+  _play() {
+    if (!this.displayLines.length) return
+    if (this.data.status === 'playing') return
+    const total = this.data.totalScroll
+    if (total <= 0) return
+
+    const s = this.data.settings
+    const from = this.engine ? this.engine.current : 0
+
+    // 已到末尾：从头开始
+    if (from >= total - 1) {
+      this.engine.seekProgress(0)
+      this._syncOffsetFromEngine()
+    }
+
+    // 从静止起播、且设置了倒计时 → 先倒数
+    if (s.countdown > 0 && from <= 0 && this.data.status === 'stopped' && !this._countdownDone) {
+      this._startCountdown()
+      return
+    }
+    this._countdownDone = false
+
+    // 播放前按最新设置重配速度（兜底：即使速度经非 _setSetting 路径写入，也不会拿旧速滚）
+    this._configureEngine()
+    this.engine.start()
+    this.setData({
+      status: 'playing',
+      playing: true,
+      finished: false,
+      autoTop: this.engine.current,
+      offset: this.engine.current,
+      finishHint: ''
+    })
+    if (this.stats && this.stats.onStart) this.stats.onStart()
+  },
+
+  _pause(silent) {
+    if (this.data.status !== 'playing') {
+      this.setData({ playing: false })
+      return
+    }
+    if (this.engine) this.engine.pause()
+    this.setData({ status: 'paused', playing: false })
+    this._syncOffsetFromEngine()
+    this._updateProgress()
+    if (!silent) {
+      if (this.stats && this.stats.onPause) this.stats.onPause()
+      this._savePosition()
+    }
+  },
+
+  _stopAnimation() {
+    // 兼容旧调用：引擎停表统一走 engine.pause/stop
+    if (this.engine) this.engine.pause()
+  },
+
+  /** 引擎逐帧回调：offset 每帧给，百分比整数变化才给，每 8 帧裁剪一次 */
+  _onUpdate(offset, progress, lineIndex) {
+    if (!isFinite(offset)) return
+    if (this.stats) this.stats.onTick(progress)
+
+    const patch = { offset: offset, autoTop: offset }
+    const pctVal = Math.round(progress * 100)
+    if (pctVal !== this._lastPct) {
+      this._lastPct = pctVal
+      patch.progressText = pctVal + '%'
+      patch.progressValue = pctVal
+    }
+    if (this.data.focus) {
+      const fi = this._focusIndexOf(offset)
+      if (fi !== this.data.focusIndex) patch.focusIndex = fi
+    }
+    this.setData(patch)
+
+    this._frameCount++
+    if (this._frameCount % 8 === 0) this._updateVisible(false)
+  },
+
+  _onEnd() {
+    if (this.stats) this.stats.onEnd()
+    this._finalizeStats(true)
+    this._freeTop = this.data.totalScroll
+    this.setData({
+      status: 'stopped',
+      playing: false,
+      autoTop: this.data.totalScroll,
+      offset: this.data.totalScroll,
+      progressValue: 100,
+      progressText: '100%',
+      finished: true
+    })
+    this._savePosition()
+
+    if (this.data.settings.loop) {
+      setTimeout(() => {
+        this._seekPx(0)
+        setTimeout(() => this._play(), 700)
+      }, 700)
+    }
+  },
+
+  _onLoop() {
+    if (this.stats) this.stats.onLoop()
+    this._lastSection = -1
+  },
+
+  /** 跳转到指定进度 0–1 */
+  _seekTo(p) {
+    const ratio = Math.max(0, Math.min(1, Number(p) || 0))
+    if (this.engine) this.engine.seekProgress(ratio)
     this._syncOffsetFromEngine()
     this._updateVisible(true)
-    this._lastSection = lines[target] ? lines[target].sectionIndex : -1
-    if (this.data.scrollMode === 'auto' && !this.data.voiceEnabled) {
-      if (this.engine.current < this.engine.maxOffset) {
-        this.engine.resume()
-        this.setData({ playing: true, finished: false })
-      }
+  },
+
+  /** 跳转到指定像素位置 */
+  _seekPx(px) {
+    const total = this.data.totalScroll
+    const target = Math.max(0, Math.min(total, Math.round(px || 0)))
+    if (this.engine) this.engine.syncTo(target)
+    this._freeTop = target
+    this.setData({
+      autoTop: target,
+      offset: target,
+      freeTop: target,
+      finished: false
+    })
+    this._updateVisible(true)
+    this._updateProgress()
+  },
+
+  /**
+   * 手动滚动（兼容旧 scroll-view 入口 + 测试直调）。
+   * 滚动真值已由 ScrollEngine.current 承载，这里只做同步落位。
+   */
+  onFreeScroll(e) {
+    const top = e && e.detail && e.detail.scrollTop
+    if (typeof top !== 'number') return
+    this._freeTop = top
+    if (this.engine) this.engine.syncTo(top)
+    this.setData({ autoTop: top, offset: top })
+    this._updateProgress()
+    this._savePositionThrottled()
+  },
+
+  _startProgressTimer() {
+    // 进度已由 _onUpdate 逐帧节流更新，这里不再单开定时器（保留方法兼容）
+  },
+
+  _stopProgressTimer() {
+    if (this._progressTimer) {
+      clearInterval(this._progressTimer)
+      this._progressTimer = null
+    }
+  },
+
+  _paintProgress(top) {
+    const total = this.data.totalScroll
+    const p = total > 0 ? Math.max(0, Math.min(1, top / total)) : 0
+    const val = Math.round(p * 100)
+    const patch = {}
+    if (val !== this.data.progressValue) {
+      patch.progress = p
+      patch.progressValue = val
+      patch.progressText = val + '%'
+    }
+    if (this.data.focus) {
+      const fi = this._focusIndexOf(top)
+      if (fi !== this.data.focusIndex) patch.focusIndex = fi
+    }
+    if (Object.keys(patch).length) this.setData(patch)
+  },
+
+  _focusIndexOf(top) {
+    const s = this.data.settings || {}
+    const vh = this.winHeight || this.data.viewportHeight || 0
+    const cueY = vh * ((s.cuePosition === undefined ? 50 : s.cuePosition) / 100)
+    // 折行会让「行号 = offset / 行高」失真，这里改走行高地形图
+    const idx = this._indexAtOffset(top + cueY - (this.data.startPad || 0))
+    return Math.max(0, Math.min(Math.max(0, this.displayLines.length - 1), idx))
+  },
+
+  _updateProgress() {
+    this._paintProgress(this.engine ? this.engine.current : this.data.autoTop)
+  },
+
+  /* ======================================================================
+   * 点击 / 手势
+   * ==================================================================== */
+
+  /** 单击屏幕 = 播放 / 暂停（浅纸一致，即时响应） */
+  onTapScreen() {
+    if (this.data.showMenu) {
+      this.onCloseMenu()
+      return
+    }
+    this.onTapPlay()
+  },
+
+  onTapPlay() {
+    this._clearCountdown()
+    if (this.data.status === 'playing') {
+      this._pause()
+    } else {
+      this._play()
     }
     this._savePosition()
   },
 
-  // ---------- 声控 ----------
+  onTapRestart() {
+    this._lastSection = -1
+    this._wrapped = false
+    this._seekPx(0)
+    this.setData({ finished: false })
+    this._play()
+  },
 
-  async onToggleVoice() {
-    if (this.data.voiceEnabled) {
-      this.voice.stop()
-      this.setData({ voiceEnabled: false, voiceLevel: 0, voiceTip: '' })
-      // 关掉声控后恢复匀速，否则会一直停着
-      app.updatePrefs({ scrollStyle: 'smooth', scrollMode: 'auto', voiceControl: false })
-      this.setData({ scrollStyle: 'smooth' })
-      if (!this.data.playing) this.engine.resume()
-      this.setData({ playing: true })
-      return
+  /* ── 手势翻页：按下暂停、拖动调位、松手续播 ── */
+  onTouchStart(e) {
+    this._touchWasPlaying = this.data.status === 'playing'
+    if (this._touchWasPlaying) this._pause(true)
+    this._touching = true
+    this._dragged = false
+    this._touchStartY = e.touches && e.touches[0] ? e.touches[0].clientY : 0
+    this._touchStartOffset = this.engine ? this.engine.current : this.data.autoTop
+  },
+
+  onTouchMove(e) {
+    if (!this._touching) return
+    const y = e.touches && e.touches[0] ? e.touches[0].clientY : this._touchStartY
+    const dy = y - this._touchStartY
+    if (Math.abs(dy) > 6) this._dragged = true
+    this._seekPx(this._touchStartOffset - dy)
+  },
+
+  onTouchEnd() {
+    if (!this._touching) return
+    this._touching = false
+    // 只有「本来在播 + 确实拖动过」才续播；轻点不唤醒，避免误触
+    if (this._touchWasPlaying && this._dragged) this._play()
+    this._touchWasPlaying = false
+    this._dragged = false
+    this._savePosition()
+  },
+
+  onTouchCancel() {
+    this.onTouchEnd()
+  },
+
+  /* ── 右侧进度条拖动 ── */
+  onProgressTouchStart(e) {
+    this._seeking = true
+    this._resumeAfterSeek = this.data.status === 'playing'
+    if (this._resumeAfterSeek) this._pause(true)
+    this.onProgressTouchMove(e)
+  },
+
+  onProgressTouchMove(e) {
+    if (!this._seeking) return
+    const y = e.touches && e.touches[0] ? e.touches[0].clientY : 0
+    const ratio = this.winHeight > 0 ? Math.max(0, Math.min(1, y / this.winHeight)) : 0
+    const px = Math.round(ratio * this.data.totalScroll)
+    if (this.engine) this.engine.syncTo(px)
+    this.setData({ autoTop: px, offset: px })
+    this._paintProgress(px)
+  },
+
+  onProgressTouchEnd() {
+    if (!this._seeking) return
+    this._seeking = false
+    this._updateVisible(true)
+    if (this._resumeAfterSeek) this._play()
+    this._resumeAfterSeek = false
+    this._savePosition()
+  },
+
+  /* ======================================================================
+   * 菜单
+   * ==================================================================== */
+
+  onOpenMenu() {
+    this._wasPlayingBeforeMenu = this.data.status === 'playing'
+    if (this._wasPlayingBeforeMenu) this._pause(true)
+    this.setData({ showMenu: true, showControls: true, menuHeight: this.winHeight * 0.84 })
+    // 每次开菜单都重新量：上一次可能滚过菜单、或换过横竖屏，旧坐标一定不准
+    this._sliderRects = {}
+    this._cacheSliderRects()
+  },
+
+  onCloseMenu() {
+    if (!this.data.showMenu) return
+    this.setData({ showMenu: false, showControls: false, colorPicker: '' })
+    this._sliderRects = {}
+    if (this._wasPlayingBeforeMenu) {
+      this._wasPlayingBeforeMenu = false
+      this._play()
+    }
+  },
+
+  noop() {},
+
+  /**
+   * 预取全部滑块几何。
+   * 菜单是 260ms 的 translate 动画：动画途中测到的 rect 在屏幕外，
+   * 拿它算 ratio 会把数值瞬间甩到极值。所以量两次 —— 打开当拍 + 动画结束之后，
+   * 后者才是可信坐标（_rectUsableV/H 会再校验一次）。
+   */
+  _cacheSliderRects() {
+    this._rectsDirty = false
+    const ids = SLIDER_KEYS.concat(HSLIDER_KEYS)
+    ids.forEach((id) => this._querySlider(id))
+    if (this._rectTimer) clearTimeout(this._rectTimer)
+    this._rectTimer = setTimeout(() => {
+      this._rectTimer = null
+      if (!this.data.showMenu) return
+      SLIDER_KEYS.concat(HSLIDER_KEYS).forEach((id) => this._querySlider(id))
+    }, 320)
+  },
+
+  /**
+   * 菜单（scroll-view）滚动 → 之前缓存的坐标全废。
+   * 不清掉的话，用户滚动后再拖滑块会按旧坐标算 ratio，数值直接跳到别处。
+   */
+  onSheetScroll() {
+    if (this._rectsDirty) return
+    this._rectsDirty = true
+    this._sliderRects = {}
+  },
+
+  /**
+   * 测量单个滑块的轨道几何。
+   *
+   * 两个坑，都会让滑块「点了完全没反应」：
+   * 1. 页面里不能写 `createSelectorQuery().in(this)` —— in() 只对自定义组件有效，
+   *    Page 上调用会拿不到任何结果（旧实现这么写，导致 rect 永远为空）。
+   * 2. 不能只在开菜单时缓存一次 —— 菜单是可滚动的 scroll-view，滚动后坐标全变了。
+   * 所以这里做成「按需实时量」，触摸时补一次。
+   */
+  _querySlider(id, cb) {
+    const done = (rect) => {
+      if (rect) this._sliderRects[id] = rect
+      if (typeof cb === 'function') cb(rect || null)
+    }
+    if (typeof wx.createSelectorQuery !== 'function') return done(null)
+    try {
+      const q = wx.createSelectorQuery()
+      q.select('#' + id + ' .tp-vtrack').boundingClientRect()
+      q.select('#' + id + ' .tp-htrack').boundingClientRect()
+      q.select('#' + id).boundingClientRect()
+      q.exec((res) => {
+        const r = res || []
+        const vTrack = r[0]
+        const hTrack = r[1]
+        const cell = r[2]
+        const track =
+          vTrack && vTrack.height > 0
+            ? vTrack
+            : hTrack && hTrack.width > 0
+              ? hTrack
+              : cell
+        done(track || null)
+      })
+    } catch (e) {
+      done(null)
+    }
+  },
+
+  /* ── 竖滑块 ── */
+
+  /**
+   * 取滑块 id。**这是 2026-10-28「速度锁死」的第一个真因**：
+   * 触摸事件挂在 .tp-vhit 上（为了不抢数值区的点击），而 e.currentTarget 指向
+   * 「绑定事件的那个节点」＝ .tp-vhit，不是外面带 id 的 .tp-cell。
+   * .tp-vhit 没有 id → e.currentTarget.id === ''，后面 _applySliderRatio('') 直接 return，
+   * 于是所有竖滑块（速度/字号/行距/字距/指示线）在真机上点了完全没反应，
+   * 而测试里手工喂了 currentTarget.id 所以一直"通过"（假绿）。
+   * 现在 WXML 给 .tp-vhit 和横滑块格子都加了 data-slider，这里按 dataset → id → target 三级取。
+   */
+  _sliderIdOf(e) {
+    const ct = (e && e.currentTarget) || {}
+    const ds = ct.dataset || {}
+    if (ds.slider) return ds.slider
+    if (ct.id) return ct.id
+    const tg = (e && e.target) || {}
+    const tds = tg.dataset || {}
+    return tds.slider || tg.id || ''
+  },
+
+  /**
+   * 滑块量纲表：ratio ↔ 真实值只走这一份定义。
+   * 之前「ratio 换算」和「值校验」分散在 _applySliderRatio 与各 handler 里，
+   * 加一条相对拖动就要复制一遍区间常量 —— 迟早写歪，所以收成一张表。
+   */
+  _sliderSpec(id) {
+    const s = this.data.settings || {}
+    switch (id) {
+      case 'vs-speed':
+        return s.speedUnit === 'px'
+          ? { key: 'speed', min: timeline.LEGACY_SPEED_MIN, max: timeline.LEGACY_SPEED_MAX, step: 0.1, mode: 'quick' }
+          : { key: 'speedCpm', min: timeline.CPM_MIN, max: timeline.CPM_MAX, step: timeline.CPM_STEP, mode: 'quick' }
+      case 'vs-fontSize':
+        return { key: 'fontSize', min: settingsEngine.FONT_SIZE_MIN, max: settingsEngine.FONT_SIZE_MAX, step: 1, mode: 'layout' }
+      case 'vs-lineHeight':
+        return { key: 'lineHeight', min: settingsEngine.LINE_HEIGHT_MIN, max: settingsEngine.LINE_HEIGHT_MAX, step: 0.1, mode: 'layout' }
+      case 'vs-letterSpacing':
+        return { key: 'letterSpacing', min: settingsEngine.LETTER_SPACING_MIN, max: settingsEngine.LETTER_SPACING_MAX, step: 1, mode: 'layout' }
+      case 'vs-cuePosition':
+        return { key: 'cuePosition', min: settingsEngine.CUE_MIN, max: settingsEngine.CUE_MAX, step: 1, mode: 'quick' }
+      case 'hs-contentWidth':
+        return { key: 'contentWidth', min: settingsEngine.CONTENT_WIDTH_MIN, max: settingsEngine.CONTENT_WIDTH_MAX, step: 1, mode: 'layout' }
+      case 'hs-countdown':
+        return { key: 'countdown', min: 0, max: settingsEngine.COUNTDOWN_MAX, step: 1, mode: 'quick' }
+      default:
+        return null
+    }
+  },
+
+  /**
+   * 取触摸点坐标。
+   *
+   * ⚠️ 必须判断 `touches.length` 而不是 `e.touches || e.changedTouches`：
+   * 手指抬起后 `e.touches` 是**空数组**（truthy），旧写法会拿空数组，
+   * 于是 `undefined.clientY` → null → 滑块静默失效。
+   * 而 selectorQuery 的回调是下一帧才执行，那时 `touches` 往往已经空了 ——
+   * 「点一下就抬手」在真机上正好走这条路径，表现就是「点了完全没反应」。
+   */
+  _touchY(e) {
+    if (!e) return null
+    const t = e.touches && e.touches.length ? e.touches : (e.changedTouches || [])
+    return t[0] && typeof t[0].clientY === 'number' ? t[0].clientY : null
+  },
+
+  _touchX(e) {
+    if (!e) return null
+    const t = e.touches && e.touches.length ? e.touches : (e.changedTouches || [])
+    return t[0] && typeof t[0].clientX === 'number' ? t[0].clientX : null
+  },
+
+  /**
+   * 几何可信度校验。
+   * 菜单是 translateY / translateX 动画打开的，动画期间测到的 rect 在屏幕外，
+   * 拿它算 ratio 会把速度瞬间甩到最大/最小 —— 用户看到的就是"数字乱跳、拖不动"。
+   * 所以只认「落在视口内、且有长度」的 rect，其余一律当没量到。
+   */
+  _rectUsableV(rect) {
+    if (!rect || !(rect.height > 20)) return false
+    const top = typeof rect.top === 'number' ? rect.top : NaN
+    if (!isFinite(top)) return false
+    return top > -40 && top < (this.winHeight || 812) + 40
+  },
+
+  _rectUsableH(rect) {
+    if (!rect || !(rect.width > 20)) return false
+    const left = typeof rect.left === 'number' ? rect.left : NaN
+    if (!isFinite(left)) return false
+    return left > -40 && left < (this.winWidth || 375) + 40
+  },
+
+  /**
+   * 触摸开始。
+   *
+   * 2026-10-28 第三次重构（宝哥反馈「速度调节仍无效」）：
+   *   ① 事件从 `.tp-vhit` 上移到**整格 `.tp-cell`** —— 命中区由 94px 变成整格 132px，
+   *      不再受「内层绝对定位算错 / 被子元素盖住 / height 为 0」影响；
+   *   ② 起点只做一次「点哪到哪」，之后全程走相对位移，**不依赖任何几何测量**；
+   *   ③ 异步补量只更新灵敏度（travel），不再拿已经失效的事件对象重算位置。
+   */
+  onVSliderStart(e) {
+    const id = this._sliderIdOf(e)
+    if (!id) return
+    const spec = this._sliderSpec(id)
+    if (!spec) return
+    this._activeSlider = id
+
+    const cur = Number(this.data.settings[spec.key])
+    const y0 = this._touchY(e)
+    const cached = this._sliderRects[id]
+    const travel = this._rectUsableV(cached) ? cached.height : 0
+    this._vDrag = {
+      id: id,
+      y0: y0,
+      value0: isFinite(cur) ? cur : spec.min,
+      travel: travel,
+      placed: false
     }
 
+    // 点哪到哪：只在按下这一刻用一次绝对坐标。
+    // ⚠️ 必须限定「按在轨道范围内」—— 事件现在挂在整格上，格子下部还有标签区，
+    // 按在轨道外时如果也做绝对定位，一点就掉到最慢（或跳到最快）。
+    // 轨道外只记起点，交给后面的相对位移。
+    const inTrack =
+      cached && typeof y0 === 'number' && typeof cached.top === 'number' &&
+      typeof cached.bottom === 'number' && y0 >= cached.top - 8 && y0 <= cached.bottom + 8
+    if (this._rectUsableV(cached) && inTrack) {
+      this._applyVSliderAtY(id, cached, y0)
+      // 绝对定位后把起点同步成「刚落到的新值」，否则相对位移会从旧值算起，一拖就跳
+      const now = Number(this.data.settings[spec.key])
+      this._vDrag.value0 = isFinite(now) ? now : this._vDrag.value0
+      this._vDrag.y0 = y0
+      this._vDrag.placed = true
+    }
+
+    const token = (this._sliderToken = (this._sliderToken || 0) + 1)
+    this._querySlider(id, (fresh) => {
+      if (!fresh || token !== this._sliderToken) return
+      if (!this._rectUsableV(fresh)) return
+      this._sliderRects[id] = fresh
+      const d = this._vDrag
+      if (!d || d.id !== id) return
+      if (!(d.travel > 20)) d.travel = fresh.height
+      // 缓存原本是空的（首帧 / 刚打开菜单）→ 这一刻才第一次拿到几何：
+      // 用**记下来的 y0** 补做一次绝对定位。不能再用事件对象 e ——
+      // selectorQuery 的回调是下一帧执行，那时 e.touches 已经空了。
+      const fy = d.y0
+      const fBottom = typeof fresh.bottom === 'number' ? fresh.bottom : fresh.top + fresh.height
+      const fIn = typeof fy === 'number' && fy >= fresh.top - 8 && fy <= fBottom + 8
+      if (!d.placed && fIn) {
+        this._applyVSliderAtY(id, fresh, fy)
+        const now = Number(this.data.settings[spec.key])
+        d.value0 = isFinite(now) ? now : d.value0
+        d.placed = true
+      }
+    })
+  },
+
+  onVSliderMove(e) {
+    const id = this._activeSlider || this._sliderIdOf(e)
+    if (!id) return
+    const d = this._vDrag
+    const y = this._touchY(e)
+    if (d && d.id === id && typeof d.y0 === 'number' && typeof y === 'number') {
+      // 主路径：纯相对位移。1px = 区间 / 轨道高，与菜单滚到哪、几何准不准全都无关。
+      const spec = this._sliderSpec(id)
+      if (!spec) return
+      const rectH = this._sliderRects[id] && this._sliderRects[id].height
+      const travel = d.travel > 20 ? d.travel : rectH > 20 ? rectH : 46
+      this._applySliderValue(id, d.value0 - ((y - d.y0) / travel) * (spec.max - spec.min))
+      return
+    }
+    // 兜底（touchstart 丢了）：退回绝对定位
+    const rect = this._sliderRects[id]
+    if (this._rectUsableV(rect)) this._applyVSliderAt(id, rect, e)
+  },
+
+  onVSliderEnd() {
+    const id = this._activeSlider
+    this._activeSlider = ''
+    this._vDrag = null
+    // 收手时按当前真实位置重测一次，下次抬手就是准的
+    if (id) this._querySlider(id)
+    this._saveSettingsNow()
+  },
+
+  _applyVSliderAt(id, rect, e) {
+    this._applyVSliderAtY(id, rect, this._touchY(e))
+  },
+
+  /** 用显式 y 定位（异步回调里事件对象已失效，只能靠记下来的 y0） */
+  _applyVSliderAtY(id, rect, y) {
+    if (!this._rectUsableV(rect)) return
+    if (typeof y !== 'number') return
+    const bottom = typeof rect.bottom === 'number' ? rect.bottom : rect.top + rect.height
+    const ratio = Math.max(0, Math.min(1, (bottom - y) / rect.height))
+    this._applySliderRatio(id, ratio)
+  },
+
+  /* ── 横向滑块 ── */
+
+  onHSliderStart(e) {
+    const id = this._sliderIdOf(e)
+    if (!id) return
+    const spec = this._sliderSpec(id)
+    if (!spec) return
+    this._activeHSlider = id
+
+    const cur = Number(this.data.settings[spec.key])
+    const x0 = this._touchX(e)
+    const cached = this._sliderRects[id]
+    this._hDrag = { id: id, x0: x0, value0: isFinite(cur) ? cur : spec.min, travel: 0 }
+    if (this._rectUsableH(cached)) {
+      this._hDrag.travel = cached.width
+      this._applyHSliderAt(id, cached, e)
+      const now = Number(this.data.settings[spec.key])
+      this._hDrag.value0 = isFinite(now) ? now : this._hDrag.value0
+      this._hDrag.x0 = x0
+    }
+
+    const token = (this._sliderToken = (this._sliderToken || 0) + 1)
+    this._querySlider(id, (fresh) => {
+      if (!fresh || token !== this._sliderToken) return
+      if (!this._rectUsableH(fresh)) return
+      this._sliderRects[id] = fresh
+      if (this._hDrag && this._hDrag.id === id && !(this._hDrag.travel > 20)) {
+        this._hDrag.travel = fresh.width
+      }
+    })
+  },
+
+  onHSliderMove(e) {
+    const id = this._activeHSlider || this._sliderIdOf(e)
+    if (!id) return
+    const d = this._hDrag
+    const x = this._touchX(e)
+    if (d && d.id === id && typeof d.x0 === 'number' && typeof x === 'number') {
+      const spec = this._sliderSpec(id)
+      if (!spec) return
+      const rectW = this._sliderRects[id] && this._sliderRects[id].width
+      const travel = d.travel > 20 ? d.travel : rectW > 20 ? rectW : 200
+      this._applySliderValue(id, d.value0 + ((x - d.x0) / travel) * (spec.max - spec.min))
+      return
+    }
+    const rect = this._sliderRects[id]
+    if (this._rectUsableH(rect)) this._applyHSliderAt(id, rect, e)
+  },
+
+  onHSliderEnd() {
+    const id = this._activeHSlider
+    this._activeHSlider = ''
+    this._hDrag = null
+    if (id) this._querySlider(id)
+    this._saveSettingsNow()
+  },
+
+  _applyHSliderAt(id, rect, e) {
+    if (!this._rectUsableH(rect)) return
+    const x = this._touchX(e)
+    if (typeof x !== 'number') return
+    const ratio = Math.max(0, Math.min(1, (x - rect.left) / rect.width))
+    this._applySliderRatio(id, ratio)
+  },
+
+  /** ratio（0–1）→ 真实值。点击定位与「点哪到哪」都走这里 */
+  _applySliderRatio(id, ratio) {
+    const spec = this._sliderSpec(id)
+    if (!spec) return
+    const r = Math.max(0, Math.min(1, Number(ratio) || 0))
+    this._applySliderValue(id, spec.min + r * (spec.max - spec.min))
+  },
+
+  /**
+   * 真实值写入（唯一出口）。
+   * 相对拖动直接给值，所以速度不依赖任何几何测量 —— 只要手指动了就一定有变化。
+   */
+  _applySliderValue(id, value) {
+    const spec = this._sliderSpec(id)
+    if (!spec) return
+    const v = this._clampSliderValue(spec, value)
+    if (v === null) return
+    const cur = Number(this.data.settings[spec.key])
+    if (isFinite(cur) && Math.abs(cur - v) < 1e-6) return
+    const patch = {}
+    patch[spec.key] = v
+    this._setSetting(patch, spec.mode)
+    // 速度类：除了 _setSetting 里的重配，再把新速度直推引擎一次。
+    // 目的：哪怕 configure 因为「内容高度还没量出来」被跳过，速度也不会停留在旧值。
+    if (spec.key === 'speedCpm' || spec.key === 'speed') {
+      const ms = this._msPerPx()
+      if (this.engine && ms > 0) this.engine.setSpeed(1000 / ms)
+    }
+  },
+
+  _clampSliderValue(spec, value) {
+    if (!isFinite(value)) return null
+    const clamped = Math.max(spec.min, Math.min(spec.max, Number(value)))
+    if (spec.key === 'speedCpm') return timeline.clampCpm(clamped)
+    if (spec.key === 'speed') return timeline.clampLegacySpeed(clamped)
+    const step = spec.step > 0 ? spec.step : 1
+    const snapped = Math.round(clamped / step) * step
+    return Math.round(snapped * 1000) / 1000
+  },
+
+  /**
+   * 写入设置。
+   * @param {object} patch
+   * @param {'layout'|'quick'|'none'} mode
+   */
+  _setSetting(patch, mode) {
+    const orientation = this.data.orientation
+    const next = settingsEngine.patch(orientation, patch)
+    const view = {
+      settings: next,
+      fontSizePx: next.fontSize,
+      lineHeightPx: settingsEngine.lineHeightPxOf(next),
+      letterSpacing: next.letterSpacing,
+      contentWidth: next.contentWidth,
+      marginHorizontal: Math.round(((100 - next.contentWidth) / 100) * this.winWidth / 2),
+      textAlign: next.textAlign,
+      fontFamily: settingsEngine.FONT_FAMILIES[next.fontFamily] || settingsEngine.FONT_FAMILIES.system,
+      fontFamilyLabel: settingsEngine.fontFamilyLabel(next.fontFamily),
+      fontBold: !!next.fontBold,
+      bg: next.backgroundColor,
+      textColor: next.textColor,
+      showCue: next.showCue !== false,
+      cuePosition: next.cuePosition,
+      pctSpeed: this._pctOfSpeed(next),
+      pctFontSize: pct(next.fontSize, settingsEngine.FONT_SIZE_MIN, settingsEngine.FONT_SIZE_MAX),
+      pctLineHeight: pct(next.lineHeight, settingsEngine.LINE_HEIGHT_MIN, settingsEngine.LINE_HEIGHT_MAX),
+      pctLetterSpacing: pct(next.letterSpacing, settingsEngine.LETTER_SPACING_MIN, settingsEngine.LETTER_SPACING_MAX),
+      pctCue: pct(next.cuePosition, settingsEngine.CUE_MIN, settingsEngine.CUE_MAX),
+      pctWidth: pct(next.contentWidth, settingsEngine.CONTENT_WIDTH_MIN, settingsEngine.CONTENT_WIDTH_MAX),
+      pctCountdown: pct(next.countdown, 0, settingsEngine.COUNTDOWN_MAX),
+      speedText: settingsEngine.speedLabel(next),
+      speedUnitText: settingsEngine.speedUnitLabel(next),
+      speed: next.speedUnit === 'px' ? next.speed : next.speedCpm,
+      speedMin: next.speedUnit === 'px' ? timeline.LEGACY_SPEED_MIN : timeline.CPM_MIN,
+      speedMax: next.speedUnit === 'px' ? timeline.LEGACY_SPEED_MAX : timeline.CPM_MAX,
+      colorWarning: settingsEngine.isColorTooClose(next.textColor, next.backgroundColor),
+      loop: !!next.loop,
+      showClocks: next.showClocks !== false,
+      focus: !!next.focus,
+      roleHighlight: next.roleHighlight !== false,
+      keepScreenOn: next.keepScreenOn !== false,
+      mirror: !!next.mirror,
+      colorPicker: ''
+    }
+    this.setData(view)
+
+    if (mode === 'layout') this._scheduleLayout()
+    else if (mode === 'quick') {
+      // 速度变了：无论是否在播都重配引擎。configure 幂等，只更新 pxPerSecond 并
+      // clamp current 到合法区间，不会跳位；否则「停着改速度再点播放」会用旧速度。
+      this._configureEngine()
+    }
+    if (mode !== 'none') this._saveSettingsNow()
+  },
+
+  _scheduleLayout() {
+    if (this._layoutTimer) clearTimeout(this._layoutTimer)
+    this._layoutTimer = setTimeout(() => {
+      this._layoutTimer = null
+      this._parseAndLayout({ keepProgress: true })
+    }, LAYOUT_THROTTLE_MS)
+  },
+
+  _restartFromCurrent() {
+    this._pause(true)
+    this._play()
+  },
+
+  _saveSettingsNow() {
+    // settingsEngine.patch 已经落盘，这里只做语义占位（保留调用点便于将来加云同步）
+  },
+
+  /* ── 菜单开关项 ── */
+  onToggleStartPosition() {
+    const next = this.data.settings.startPosition === 'bottom' ? 'middle' : 'bottom'
+    this._setSetting({ startPosition: next }, 'layout')
+  },
+
+  onToggleBold() {
+    this._setSetting({ fontBold: !this.data.settings.fontBold }, 'layout')
+  },
+
+  onToggleFontFamily() {
+    const next = settingsEngine.nextFontFamily(this.data.settings.fontFamily)
+    this._setSetting({ fontFamily: next }, 'layout')
+  },
+
+  onToggleMirror() {
+    const next = !this.data.settings.mirror
+    this.setData({ mirror: next })
+    this._setSetting({ mirror: next }, 'none')
+  },
+
+  onToggleLoop() {
+    const next = !this.data.settings.loop
+    this.setData({ loop: next })
+    this._setSetting({ loop: next }, 'none')
+  },
+
+  onToggleFocus() {
+    const next = !this.data.settings.focus
+    this.setData({ focus: next })
+    this._setSetting({ focus: next }, 'none')
+  },
+
+  onToggleClocks() {
+    this._setSetting({ showClocks: !this.data.settings.showClocks }, 'none')
+    this._tickClock()
+  },
+
+  onToggleFillLight() {
+    const next = !this.data.settings.fillLight
+    this._setSetting({ fillLight: next }, 'none')
+    this.setData({ fillLight: next })
+    try {
+      if (next) {
+        if (typeof this._sysBrightness !== 'number') {
+          wx.getScreenBrightness({
+            success: (r) => {
+              this._sysBrightness = r.value
+            }
+          })
+        }
+        wx.setScreenBrightness({ value: 1 })
+      } else {
+        wx.setScreenBrightness({
+          value: typeof this._sysBrightness === 'number' ? this._sysBrightness : 0.6
+        })
+      }
+    } catch (e) {
+      /* 模拟器/无权限时忽略 */
+    }
+  },
+
+  /**
+   * 角色多色高亮开关。
+   * 2026-10-28 去重后这里是「角色色」的唯一常规入口（设置页那份已删），
+   * 所以必须和 prefs 的智能总闸打通：
+   *   - 总闸开着时手动开高亮 → 自动解除总闸（否则出现「开关是开的、画面却没颜色」的幽灵态）
+   *   - 关高亮 → prefs.roleHighlight 同步关，避免下次从编辑页进来又变回开
+   */
+  onToggleRoleHighlight() {
+    // 以「画面上真的有没有颜色」为准（data.roleHighlight 就是渲染用的那个布尔）：
+    // 总闸开着、或编辑页把它关掉时，这里显示的是关；点一下 = 我要颜色 → 一并解除总闸。
+    const base =
+      this.data.roleHighlight !== undefined
+        ? !!this.data.roleHighlight
+        : this.data.settings.roleHighlight !== false
+    const effectiveOn = base && !this.data.smartOff
+    const next = !effectiveOn
+    const cur = (app.globalData && app.globalData.prefs) || prefsEngine.load()
+    let p = cur
+    try {
+      p = app.updatePrefs(prefsEngine.smartPatch(cur, 'roleHighlight', next))
+    } catch (e) {
+      p = cur
+    }
+    this.setData({ smartOff: !!p.smartOff, roleHighlight: next })
+    this._setSetting({ roleHighlight: next }, 'layout')
+  },
+
+  /** 速度单位切换：px ↔ cpm，切换前后实际速度不跳变（走 timeline.switchSpeedUnit） */
+  onToggleSpeedUnit() {
+    const s = this.data.settings
+    const target = s.speedUnit === 'px' ? 'cpm' : 'px'
+    const patchObj = timeline.switchSpeedUnit(s, this._speedContext(), target)
+    this._setSetting(patchObj, 'quick')
+  },
+
+  /** 一键主题：套用预设背景+文字色（与设置页预设主题同源） */
+  onTapTheme(e) {
+    const bg = e.currentTarget.dataset.bg
+    const text = e.currentTarget.dataset.text
+    this._setSetting({ backgroundColor: bg, textColor: text }, 'layout')
+  },
+
+  /** 一键关闭智能功能（漏词兜底）：与编辑页/设置页同源，存全局 prefs.smartOff */
+  onToggleSmartOff() {
+    const cur = (app.globalData && app.globalData.prefs) || prefsEngine.load()
+    const next = !cur.smartOff
+    const p = app.updatePrefs(prefsEngine.smartPatch(cur, 'smartOff', next))
+    this.setData({ smartOff: !!p.smartOff })
+    this._parseAndLayout({ keepProgress: true })
+    util.toast(next ? '已关闭智能功能：台词将完整显示' : '已恢复智能功能')
+  },
+
+  /** 视线参考线开关（渲染用 settings.showCue） */
+  onToggleCue() {
+    const next = this.data.settings.showCue === false
+    this._setSetting({ showCue: next }, 'none')
+  },
+
+  /** 屏幕常亮开关：立即生效（关掉时也要主动 setKeepScreenOn(false)） */
+  onToggleKeepScreenOn() {
+    const next = this.data.settings.keepScreenOn === false
+    this._setSetting({ keepScreenOn: next }, 'none')
+    try {
+      wx.setKeepScreenOn({ keepScreenOn: next })
+    } catch (e) {
+      /* 模拟器/无权限忽略 */
+    }
+  },
+
+  /** 重新查看新手引导：清掉「已看过」标记并重显引导 */
+  onReplayGuide() {
+    try {
+      wx.removeStorageSync('baoge_guide_tp')
+    } catch (e) {
+      /* 忽略 */
+    }
+    this.setData({ guideVisible: true, showMenu: false, showControls: false })
+  },
+
+  onSetAlign(e) {
+    const key = e.currentTarget.dataset.key
+    if (settingsEngine.TEXT_ALIGN_KEYS.indexOf(key) < 0) return
+    this._setSetting({ textAlign: key }, 'layout')
+  },
+
+  /** 打开配色托盘（文字色 + 背景色 + 主题预设都在里面） */
+  onOpenColor() {
+    this.setData({ colorPicker: this.data.colorPicker ? '' : 'all' })
+  },
+
+  onPickColor(e) {
+    const color = e.currentTarget.dataset.color
+    const kind = e.currentTarget.dataset.kind || 'text'
+    if (kind === 'bg') {
+      this._setSetting({ backgroundColor: color }, 'layout')
+    } else {
+      this._setSetting({ textColor: color }, 'layout')
+    }
+  },
+
+  onResetSettings() {
+    const next = settingsEngine.reset(this.data.orientation)
+    this.setData({ settings: next, colorPicker: '' })
+    this._parseAndLayout({ keepProgress: true })
+    util.toast('已恢复默认')
+  },
+
+  /* ======================================================================
+   * 横竖屏切换（2026-10-28 恢复：菜单里加回切换入口）
+   * ==================================================================== */
+
+  onToggleOrientation() {
+    const next = this.data.orientation === 'landscape' ? 'portrait' : 'landscape'
+    this._applyOrientation(next)
+    util.toast(next === 'landscape' ? '已切换横屏' : '已切换竖屏')
+    // 部分机型 setPageOrientation 不触发 onResize，兜底重排一次
+    setTimeout(() => {
+      if (this._launched && this.allLines && this.allLines.length) {
+        this._relayoutKeepProgress()
+      }
+    }, 400)
+  },
+
+  _applyOrientation(orient) {
+    if (typeof wx.setPageOrientation !== 'function') return
+    if (!orient) return
+    try {
+      setTimeout(() => {
+        try {
+          wx.setPageOrientation({ orientation: orient, fail: () => {}, success: () => {} })
+        } catch (e) {
+          console.error('[tp] setPageOrientation 失败（已忽略）', e)
+        }
+      }, 0)
+    } catch (e) {
+      console.error('[tp] setPageOrientation 调度失败（已忽略）', e)
+    }
+  },
+
+  /* ── 声控 ── */
+  async onToggleVoice() {
+    if (this.data.settings.voiceControl) {
+      this._stopVoice()
+      this._setSetting({ voiceControl: false }, 'none')
+      this.setData({ voiceEnabled: false, voiceLevel: 0, voiceTip: '' })
+      return
+    }
     const ok = await vad.requestAuth()
     if (!ok) {
       wx.showModal({
         title: '声控跟读不可用',
-        content:
-          '需要麦克风权限，且必须在微信公众平台配置《隐私保护指引》并声明「麦克风/录音」用途。\n\n如果你正在电脑模拟器里点这个按钮，请改用手机微信扫码真机预览——模拟器无法使用麦克风，属正常现象。',
+        content: '需要麦克风权限。模拟器无法使用麦克风，请用手机真机预览。',
         showCancel: false,
         confirmText: '知道了'
       })
       return
     }
-    this.setData({
-      voiceEnabled: true,
-      voiceCalibrating: true,
-      voiceTip: '正在采集环境噪声',
-      scrollStyle: 'voice'
-    })
-    app.updatePrefs({ scrollStyle: 'voice', scrollMode: 'voice', voiceControl: true })
-    // 进声控先停掉自动滚动，交给 VAD 驱动；否则会出现「边校准边自己滚」
-    this.engine.pause()
+    this._setSetting({ voiceControl: true }, 'none')
+    this.setData({ voiceEnabled: true, voiceCalibrating: true, voiceTip: '正在采集环境噪声' })
+    // 进声控先停掉自动滚动，交给 VAD 驱动
+    if (this.engine) this.engine.pause()
     this.setData({ playing: false })
     this._startVoice()
   },
 
   _startVoice() {
+    if (!this.voice) return
     const started = this.voice.start({
       onVoice: () => {
-        this.engine.resume()
-        this.setData({ playing: true, voiceCalibrating: false, voiceTip: '' })
+        // 检测到声音就开播（匀速逐帧），静音就停
+        if (this.engine) this.engine.resume()
+        this.setData({ playing: true, status: 'playing', voiceCalibrating: false, voiceTip: '' })
       },
       onSilence: () => {
-        this.engine.pause()
-        this.setData({ playing: false })
+        if (this.engine) this.engine.pause()
+        this.setData({ playing: false, status: 'paused', voiceCalibrating: false, voiceTip: '' })
       },
       onLevel: (level, calibrating) => {
         if (calibrating) return
-        // 音量条没必要每帧刷新，节流到约 15fps
         const now = Date.now()
         if (now - (this._lastLevelAt || 0) < 66) return
         this._lastLevelAt = now
         this.setData({ voiceLevel: Math.round(level * 100) })
       },
-      onCalibrated: () => {
-        this.setData({ voiceCalibrating: false, voiceTip: '' })
-      },
-      onError: (msg) => {
+      onCalibrated: () => this.setData({ voiceCalibrating: false, voiceTip: '' }),
+      onError: () => {
         this.setData({ voiceEnabled: false, voiceCalibrating: false, voiceTip: '录音异常' })
         util.toast('录音异常，已关闭声控')
       }
     })
     if (!started) {
-      this.setData({ voiceEnabled: false, voiceCalibrating: false, voiceTip: '' })
+      this.setData({ voiceEnabled: false, voiceCalibrating: false })
       util.toast('录音启动失败')
     }
   },
 
-  /** 环境变了就重新采一次噪声基线 */
-  onTapRecalibrate() {
-    if (!this.voice || !this.voice.running) return
-    this.voice.recalibrate()
-    this.setData({ voiceCalibrating: true, voiceTip: '正在采集环境噪声' })
+  _stopVoice() {
+    if (this.voice && this.voice.running) this.voice.stop()
+    this._stopAnimation()
+  },
+
+  /* ======================================================================
+   * 倒计时 / 时钟 / 屏幕
+   * ==================================================================== */
+
+  _startCountdown() {
+    const n = this.data.settings.countdown || 0
+    if (n <= 0) {
+      this._play()
+      return
+    }
+    this._clearCountdown()
+    this.setData({ countdown: n, status: 'stopped', playing: false })
+    this._countdownTimer = setInterval(() => {
+      const next = this.data.countdown - 1
+      if (next <= 0) {
+        this._clearCountdown()
+        this._countdownDone = true
+        this._play()
+      } else {
+        this.setData({ countdown: next })
+      }
+    }, 1000)
+  },
+
+  _clearCountdown() {
+    if (this._countdownTimer) {
+      clearInterval(this._countdownTimer)
+      this._countdownTimer = null
+    }
+    if (this.data.countdown > 0) this.setData({ countdown: 0 })
+  },
+
+  _tickClock() {
+    const d = new Date()
+    const pad = (x) => (x < 10 ? '0' + x : '' + x)
+    this.setData({ clockText: `${pad(d.getHours())}:${pad(d.getMinutes())}` })
+  },
+
+  _applyScreenPrefs(s) {
+    const settings = s || settingsEngine.DEFAULTS
+    try {
+      if (settings.keepScreenOn !== false) {
+        wx.setKeepScreenOn({ keepScreenOn: true })
+      }
+      if (settings.fillLight) wx.setScreenBrightness({ value: 1 })
+    } catch (e) {
+      /* 模拟器/测试环境可能没有这些 API，忽略即可 */
+    }
+  },
+
+  _restoreScreen() {
+    try {
+      wx.setKeepScreenOn({ keepScreenOn: false })
+      if (this.data.fillLight) {
+        wx.setScreenBrightness({
+          value: typeof this._sysBrightness === 'number' ? this._sysBrightness : 0.6
+        })
+      }
+    } catch (e) {}
+  },
+
+  /* ======================================================================
+   * 角色过滤（宝哥独有，保留）
+   * ==================================================================== */
+
+  _roleDisplayFilter() {
+    const rd = this.script && this.script.roleDisplay
+    if (rd === undefined || rd === null) return null
+    if (!Array.isArray(rd) || !rd.length) return new Set()
+    const set = roleEngine.resolveRoleFilter(rd, this.allRoles || [], this.allAliases || {})
+    return set && set.size ? set : null
+  },
+
+  onSetRoleFilter(def) {
+    if (def === null) this.roleFilter = null
+    else if (!def || !def.length) this.roleFilter = new Set()
+    else this.roleFilter = roleEngine.resolveRoleFilter(def, this.allRoles || [], this.allAliases || {})
+    this._applyRoleFilter()
+  },
+
+  _applyRoleFilter() {
+    const legacy = prefsEngine.load()
+    if (legacy.smartOff) this.roleFilter = null
+    this.displayLines = roleEngine.filterLinesByRole(this.allLines, this.roleFilter)
+    if (this.roleFilter && this.roleFilter.size > 0 && this.displayLines.length === 0) {
+      this.roleFilter = null
+      this.displayLines = this.allLines
+      util.toast('所选角色无台词，已显示全部')
+    }
+    const lineH = this.data.lineHeightPx || 1
+    this.contentHeight = this.displayLines.length * lineH
+    this.setData({
+      lines: this.displayLines,
+      visibleLines: this.displayLines,
+      contentHeight: this.displayLines.length * lineH,
+      textHeight: this.displayLines.length * lineH
+    })
+    this._configureEngine()
+    this._updateVisible(true)
+    this._measureContent(false)
+  },
+
+  /* ======================================================================
+   * 进度 / 统计 / 引导
+   * ==================================================================== */
+
+  _savePosition() {
+    if (!this.scriptId || !this.engine) return
+    // 引擎逐帧推进，current 就是实时位置，直接按进度落盘
+    store.updatePosition(this.scriptId, this.engine.progress)
+  },
+
+  _savePositionThrottled() {
+    const now = Date.now()
+    if (now - (this._lastSaveAt || 0) < 1000) return
+    this._lastSaveAt = now
+    this._savePosition()
+  },
+
+  _finalizeStats(completed) {
+    if (!this.stats || !this.scriptId || this._statSaved) return
+    const snap = this.stats.snapshot()
+    if (!completed && snap.activeMs < 800 && !snap.completed) return
+    store.appendStat(this.scriptId, snap)
+    this._statSaved = true
+  },
+
+  onCloseGuide() {
+    try {
+      wx.setStorageSync('baoge_guide_tp', 1)
+    } catch (e) {}
+    this.setData({ guideVisible: false })
+  },
+
+  /* ======================================================================
+   * 兼容旧入口
+   * ==================================================================== */
+
+  onTapBack() {
+    this._savePosition()
+    wx.navigateBack()
+  },
+
+  onTapSettings() {
+    this.onOpenMenu()
+  },
+
+  onToggleGuide() {
+    this._setSetting({ showCue: !this.data.settings.showCue }, 'none')
+  },
+
+  onTapThemePreset() {
+    util.toast('配色请用菜单里的字体/背景颜色')
+  },
+
+  /** 旧速度接口：按当前单位写入 */
+  onTapSpeed(e) {
+    const delta = Number(e.currentTarget.dataset.delta) || 0
+    const s = this.data.settings
+    if (s.speedUnit === 'px') this._applySpeed(s.speed + delta)
+    else this._applySpeed(s.speedCpm + delta)
+  },
+
+  onSlideSpeed(e) {
+    this._applySpeed(Number(e.detail.value))
+  },
+
+  _applySpeed(v) {
+    const s = this.data.settings
+    if (s.speedUnit === 'px') {
+      const next = timeline.clampLegacySpeed(
+        util.clamp(v, timeline.LEGACY_SPEED_MIN, timeline.LEGACY_SPEED_MAX)
+      )
+      this._setSetting({ speed: next }, 'quick')
+    } else {
+      const next = timeline.clampCpm(
+        util.clamp(v, timeline.CPM_MIN, timeline.CPM_MAX)
+      )
+      this._setSetting({ speedCpm: next }, 'quick')
+    }
+  },
+
+  onTapFontSize(e) {
+    const delta = Number(e.currentTarget.dataset.delta) || 0
+    const next = util.clamp(
+      this.data.settings.fontSize + delta,
+      settingsEngine.FONT_SIZE_MIN,
+      settingsEngine.FONT_SIZE_MAX
+    )
+    this._setSetting({ fontSize: next }, 'layout')
+  },
+
+  /** 旧「滚动方式」内部入口（不弹权限框，仅供已授权路径/测试调用） */
+  _applyScrollStyle(key) {
+    const on = key === 'voice'
+    this._setSetting({ voiceControl: on }, 'none')
+    this.setData({
+      voiceEnabled: on,
+      scrollStyle: on ? 'voice' : 'smooth',
+      scrollMode: on ? 'voice' : 'auto'
+    })
+    if (on) {
+      this._pause(true)
+      this._startVoice()
+    } else {
+      this._stopVoice()
+    }
+  },
+
+  /** 旧「滚动方式」入口：映射到声控开关 */
+  onSetScrollStyle(e) {
+    const key = e.currentTarget.dataset.key
+    if ((key === 'voice') !== !!this.data.settings.voiceControl) this.onToggleVoice()
+  },
+
+  _startCountdownCompat() {
+    this._startCountdown()
+  },
+
+  _startScroll() {
+    this._play()
   }
 })

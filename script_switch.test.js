@@ -240,7 +240,9 @@ console.log('\n══════ 4. 异常场景：空列表 / 单台本 / 快�
   check('连点结束后 hasNext 置灰', page4.data.hasNextScript === false)
   check('连点结束后 _switching 已释放', page4._switching === false)
   const cdAfter = timers.filter((t) => t.interval === 1000).length
-  check('倒计时定时器未泄漏（最终仅1个）', cdAfter === 1, `before=${cdBefore}, after=${cdAfter}`)
+  // 2026-10-28 起倒计时默认 0（对齐浅纸），不再无条件起 1 个 interval，
+  // 断言改为「不叠加、不泄漏」：任何时刻最多 1 个。
+  check('倒计时定时器不叠加（≤1 个）', cdAfter <= 1, `before=${cdBefore}, after=${cdAfter}`)
   check('连点后数据态一致：scriptPosText=N/M 末位', page4.data.scriptPosText === `${order4.length} / ${order4.length}`, `got ${page4.data.scriptPosText}`)
 }
 

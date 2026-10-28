@@ -1,196 +1,396 @@
-.header {
-  margin-bottom: 28rpx;
+/* ==========================================================================
+   首页 · 我的台本
+   ──────────────────────────────────────────────────────────────────────────
+   目标：首屏就能看到「台本」，而不是被标题和按钮挤掉。
+   做法：顶栏压到两行文字 + 一个圆形设置钮；主操作双按钮吸顶；
+        分区横滑 chip；卡片信息三段式（标题 / 预览 / 统计 + 提词）。
+   ========================================================================== */
+
+.idx {
+  min-height: 100vh;
+  padding: 0 32rpx calc(120rpx + env(safe-area-inset-bottom));
 }
 
-.page-title {
-  font-size: 44rpx;
+/* ── 顶栏 ── */
+.idx-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0 22rpx;
+}
+
+.idx-head-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.idx-title {
+  font-size: 48rpx;
   font-weight: 700;
+  line-height: 1.2;
   letter-spacing: 0.5rpx;
 }
 
-.icon-btn {
-  padding: 12rpx 28rpx;
-  border-radius: 999rpx;
-  border: 1rpx solid var(--border-strong);
-  font-size: 26rpx;
-  color: var(--accent);
-}
-
-.tip-bar {
-  background: rgba(10, 132, 255, 0.12);
-  color: var(--accent);
+.idx-sub {
+  margin-top: 8rpx;
   font-size: 24rpx;
-  padding: 18rpx 24rpx;
-  border-radius: 14rpx;
-  margin-bottom: 24rpx;
+  color: var(--text-tertiary);
 }
 
-.script-item {
-  margin-bottom: 18rpx;
+.idx-gear {
+  flex: none;
+  width: 72rpx;
+  height: 72rpx;
+  margin-left: 20rpx;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1rpx solid var(--border);
+  color: var(--text-secondary);
+  font-size: 34rpx;
+  line-height: 70rpx;
+  text-align: center;
 }
 
-/* 分区切换栏：全部 / 拆分台本 / 单篇台本（需求 6：拆分导入的台本独立成区，可一键只看） */
-.filter-bar {
+/* ── 主操作：吸顶双按钮 ── */
+.idx-actions {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  gap: 18rpx;
+  padding: 12rpx 0 18rpx;
+  background: var(--bg);
+}
+
+.idx-act {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 14rpx;
-  margin-bottom: 24rpx;
+  justify-content: center;
+  height: 92rpx;
+  border-radius: 20rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1rpx solid var(--border-strong);
 }
 
-.filter-tab {
-  flex: 1;
-  text-align: center;
-  padding: 14rpx 0;
+.idx-act--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+/* 图标用 CSS 画，避免字体差异导致「＋」大小不一 */
+.idx-act-ico {
+  position: relative;
+  width: 26rpx;
+  height: 26rpx;
+  margin-right: 12rpx;
+}
+
+.idx-act-ico--plus::before,
+.idx-act-ico--plus::after {
+  content: '';
+  position: absolute;
+  background: #ffffff;
+  border-radius: 2rpx;
+}
+
+.idx-act-ico--plus::before {
+  left: 0;
+  top: 50%;
+  width: 26rpx;
+  height: 3rpx;
+  margin-top: -1.5rpx;
+}
+
+.idx-act-ico--plus::after {
+  top: 0;
+  left: 50%;
+  width: 3rpx;
+  height: 26rpx;
+  margin-left: -1.5rpx;
+}
+
+.idx-act-ico--down::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 3rpx;
+  height: 17rpx;
+  margin-left: -1.5rpx;
+  background: var(--text);
+  border-radius: 2rpx;
+}
+
+.idx-act-ico--down::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 8rpx solid transparent;
+  border-right: 8rpx solid transparent;
+  border-top: 9rpx solid var(--text);
+}
+
+/* ── 分区 chip（横向 scroll-view 必须显式给高，否则会塌成 0）── */
+.idx-tabs {
+  white-space: nowrap;
+  height: 68rpx;
+  margin-bottom: 20rpx;
+}
+
+.idx-tab {
+  display: inline-flex;
+  align-items: center;
+  height: 68rpx;
+  padding: 0 28rpx;
+  margin-right: 14rpx;
+  border-radius: 999rpx;
   font-size: 26rpx;
   font-weight: 500;
   color: var(--text-secondary);
   background: var(--bg-card);
   border: 1rpx solid var(--border);
-  border-radius: 999rpx;
 }
 
-.filter-tab.on {
+.idx-tab.on {
   color: #ffffff;
   background: var(--accent);
   border-color: var(--accent);
 }
 
-/* 文件夹内的台本：左侧缩进一条线，视觉上从属于文件夹 */
-.in-folder {
-  margin-left: 28rpx;
-  margin-bottom: 14rpx;
-  background: var(--bg-card);
-  border-left: 4rpx solid rgba(10, 132, 255, 0.45);
+.idx-tab-n {
+  margin-left: 8rpx;
+  font-size: 22rpx;
+  opacity: 0.72;
 }
 
-/* 文件夹标题卡 */
-.folder-head {
-  margin: 28rpx 0 14rpx;
-  padding: 20rpx 24rpx;
-  border-radius: 18rpx;
-  background: rgba(10, 132, 255, 0.1);
-  border: 1rpx solid rgba(10, 132, 255, 0.3);
-}
-
-.folder-title {
-  font-size: 30rpx;
-  font-weight: 700;
+.idx-tip {
+  background: rgba(255, 82, 82, 0.12);
   color: var(--accent);
-  max-width: 500rpx;
+  font-size: 24rpx;
+  padding: 16rpx 22rpx;
+  border-radius: 14rpx;
+  margin-bottom: 20rpx;
+}
+
+/* ── 空态：在剩余空间里垂直居中，避免首屏下方一大片空黑 ── */
+.idx-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 240rpx);
+  padding: 0 0 80rpx;
+  text-align: center;
+}
+
+.idx-empty-mark {
+  width: 132rpx;
+  margin: 0 auto 34rpx;
+  padding: 26rpx 22rpx;
+  background: var(--bg-card);
+  border: 1rpx solid var(--border);
+  border-radius: 20rpx;
+}
+
+.idx-empty-line {
+  height: 10rpx;
+  border-radius: 999rpx;
+  background: var(--bg-elevated);
+  margin-bottom: 12rpx;
+}
+
+.idx-empty-line:last-child {
+  margin-bottom: 0;
+}
+
+.idx-empty-line--short {
+  width: 60%;
+}
+
+.idx-empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.idx-empty-sub {
+  width: 100%;
+  font-size: 25rpx;
+  color: var(--text-tertiary);
+  line-height: 1.6;
+  padding: 0 40rpx;
+}
+
+.idx-empty-acts {
+  width: 100%;
+  display: flex;
+  gap: 18rpx;
+  margin-top: 40rpx;
+  padding: 0 20rpx;
+}
+
+.idx-empty-btn {
+  flex: 1;
+  height: 84rpx;
+  line-height: 82rpx;
+  text-align: center;
+  border-radius: 18rpx;
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1rpx solid var(--border-strong);
+}
+
+.idx-empty-btn--primary {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ── 列表 ── */
+.idx-list {
+  padding-bottom: 10rpx;
+}
+
+/* ── 文件夹 ── */
+.idx-folder {
+  display: flex;
+  align-items: stretch;
+  margin: 26rpx 0 14rpx;
+  border-radius: 20rpx;
+  background: var(--bg-card);
+  border: 1rpx solid var(--border);
+  overflow: hidden;
+}
+
+.idx-folder-bar {
+  flex: none;
+  width: 8rpx;
+  background: var(--accent);
+}
+
+.idx-folder.is-collapsed .idx-folder-bar {
+  background: var(--border-strong);
+}
+
+.idx-folder-main {
+  flex: 1;
+  min-width: 0;
+  padding: 22rpx 24rpx;
+}
+
+.idx-folder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.idx-folder-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 30rpx;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.folder-count {
-  font-size: 24rpx;
-  color: var(--accent);
-  background: rgba(10, 132, 255, 0.18);
+.idx-folder-right {
+  flex: none;
+  display: flex;
+  align-items: center;
+  margin-left: 16rpx;
+}
+
+.idx-folder-count {
+  font-size: 23rpx;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
   padding: 4rpx 16rpx;
   border-radius: 999rpx;
 }
 
-.folder-right {
-  align-items: center;
-  flex-shrink: 0;
+.idx-folder-arrow {
+  width: 14rpx;
+  height: 14rpx;
+  margin-left: 18rpx;
+  margin-top: -6rpx;
+  border-right: 3rpx solid var(--text-secondary);
+  border-bottom: 3rpx solid var(--text-secondary);
+  transform: rotate(45deg);
 }
 
-.folder-arrow {
-  margin-left: 14rpx;
-  font-size: 30rpx;
-  line-height: 1;
-  color: var(--accent);
-  padding: 6rpx 12rpx;
-  border-radius: 10rpx;
+.idx-folder-arrow.is-folded {
+  margin-top: 0;
+  transform: rotate(-45deg);
 }
 
-.folder-arrow:active {
-  background: rgba(10, 132, 255, 0.14);
-}
-
-.folder-head.is-collapsed {
-  background: rgba(10, 132, 255, 0.06);
-}
-
-.folder-meta {
-  margin-top: 10rpx;
-  padding-top: 12rpx;
-  border-top: 1rpx solid rgba(10, 132, 255, 0.18);
-}
-
-/* 文件夹重命名弹窗 */
-.rename-mask {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.55);
-  z-index: 60;
+.idx-folder-meta {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: var(--text-tertiary);
 }
 
-.rename-card {
-  width: 600rpx;
-  background: var(--bg-elevated);
-  border-radius: 24rpx;
-  padding: 36rpx 32rpx 28rpx;
+.idx-folder-hint {
+  margin-left: 16rpx;
+  flex: none;
 }
 
-.rename-title {
-  font-size: 32rpx;
-  font-weight: 700;
-  margin-bottom: 24rpx;
-  text-align: center;
-}
-
-.rename-input {
+/* ── 台本卡 ── */
+.idx-card {
+  margin-bottom: 18rpx;
+  padding: 26rpx 28rpx 20rpx;
+  border-radius: 20rpx;
   background: var(--bg-card);
-  border-radius: 14rpx;
-  padding: 18rpx 22rpx;
-  font-size: 30rpx;
-  margin-bottom: 30rpx;
-  /* 原生输入框需显式配色，避免当前名字呈默认黑字看不清（点击编辑文字不可见） */
-  color: #ffffff;
+  border: 1rpx solid var(--border);
 }
 
-.ed-ph {
-  color: #636366;
+.idx-card.in-folder {
+  margin-left: 24rpx;
+  border-left: 4rpx solid rgba(255, 82, 82, 0.5);
 }
 
-.rename-btns {
-  justify-content: center;
+.idx-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10rpx;
 }
 
-.rename-btn {
+.idx-card-title {
   flex: 1;
-  margin: 0 10rpx;
-  text-align: center;
-}
-
-.btn-ghost {
-  background: var(--bg-card);
-  color: var(--text);
-}
-
-.script-title {
+  min-width: 0;
   font-size: 32rpx;
   font-weight: 600;
-  margin-bottom: 8rpx;
-  max-width: 460rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.role-badge {
+.idx-chip-role {
+  flex: none;
+  margin-left: 16rpx;
+  font-size: 22rpx;
   color: var(--accent);
-  background: rgba(10, 132, 255, 0.16);
+  background: rgba(255, 82, 82, 0.14);
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
 }
 
-.script-preview {
+.idx-card-preview {
   font-size: 26rpx;
   color: var(--text-secondary);
   line-height: 1.5;
@@ -201,78 +401,153 @@
   overflow: hidden;
 }
 
-.script-meta {
+.idx-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14rpx;
   border-top: 1rpx solid var(--border);
-  padding-top: 16rpx;
 }
 
-.action-bar {
-  position: sticky;
+.idx-card-stats {
+  display: flex;
+  align-items: center;
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+}
+
+.idx-dot {
+  margin: 0 8rpx;
+}
+
+/* 「提词」药丸：一步直达提词页 */
+.idx-play {
+  display: flex;
+  align-items: center;
+  height: 54rpx;
+  padding: 0 22rpx;
+  border-radius: 999rpx;
+  border: 1rpx solid rgba(255, 82, 82, 0.55);
+  color: var(--accent);
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.idx-play-ico {
+  width: 0;
+  height: 0;
+  margin-right: 10rpx;
+  border-left: 13rpx solid var(--accent);
+  border-top: 8rpx solid transparent;
+  border-bottom: 8rpx solid transparent;
+}
+
+.idx-list-foot {
+  padding: 26rpx 0 10rpx;
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+}
+
+/* ── 文件夹重命名弹窗 ── */
+.idx-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
   top: 0;
-  z-index: 40;
-  background: var(--bg);
-  border-bottom: 1rpx solid var(--border);
-  padding: 4rpx 0 18rpx;
+  bottom: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
 }
 
-.btn-import {
-  margin-top: 20rpx;
-  color: var(--text-secondary);
+.idx-dialog {
+  width: 600rpx;
+  padding: 36rpx 32rpx 26rpx;
+  border-radius: 24rpx;
+  background: var(--bg-elevated);
 }
 
-/* 首页容器底部留白：保证最后一张卡片 / 操作按钮不被固定页脚遮挡 */
-.container {
-  padding-bottom: calc(150rpx + env(safe-area-inset-bottom));
+.idx-dialog-title {
+  margin-bottom: 24rpx;
+  text-align: center;
+  font-size: 32rpx;
+  font-weight: 700;
 }
 
-/* 页脚：固定停靠屏幕底部，始终展示版本号；半透明分隔线 + 纯黑底，避免与列表内容混淆 */
-.app-footer {
+.idx-dialog-input {
+  width: 100%;
+  padding: 18rpx 22rpx;
+  margin-bottom: 30rpx;
+  border-radius: 14rpx;
+  background: var(--bg-card);
+  border: 1rpx solid var(--border);
+  font-size: 30rpx;
+  /* 原生输入框不继承 var()，显式给白字，避免深底黑字看不见 */
+  color: #ffffff;
+}
+
+.idx-ph {
+  color: #636366;
+}
+
+.idx-dialog-btns {
+  display: flex;
+  gap: 20rpx;
+}
+
+.idx-dialog-btn {
+  flex: 1;
+  height: 80rpx;
+  line-height: 78rpx;
+  text-align: center;
+  border-radius: 16rpx;
+  font-size: 28rpx;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1rpx solid var(--border-strong);
+}
+
+.idx-dialog-btn--primary {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ── 页脚：常驻，压成一行 ── */
+.idx-foot {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 50;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 8rpx;
-  padding: 18rpx 32rpx;
-  padding-bottom: calc(18rpx + env(safe-area-inset-bottom));
-  background: var(--bg);
+  justify-content: center;
+  height: 72rpx;
+  /* 72rpx 是内容高度，安全区另算，避免被 border-box 吃掉导致文字贴边 */
+  box-sizing: content-box;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: rgba(0, 0, 0, 0.92);
   border-top: 1rpx solid var(--border);
-}
-
-.footer-main {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-}
-
-/* 版本号突出显示：用强调色小药丸，醒目但不喧宾夺主 */
-.footer-ver {
-  font-size: 26rpx;
-  font-weight: 700;
-  color: #1C1C1E;
-  background: var(--accent);
-  border-radius: 999rpx;
-  padding: 4rpx 18rpx;
-  letter-spacing: 0.5rpx;
-}
-
-.footer-sep,
-.footer-dot {
+  font-size: 21rpx;
   color: var(--text-tertiary);
 }
 
-.footer-tag {
-  font-size: 26rpx;
-  color: var(--text-secondary);
+.idx-foot-ver {
+  font-size: 21rpx;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.4rpx;
 }
 
-.footer-sub {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  font-size: 22rpx;
+.idx-foot-sep {
+  margin: 0 10rpx;
+  color: var(--border-strong);
+}
+
+.idx-foot-txt {
   color: var(--text-tertiary);
 }

@@ -99,7 +99,12 @@ console.log('\n══════ 2. 编辑页配置 roleDisplay=[林晚] → �
   check('allLines 行数不变（原始台词存储/结构未动）', page.allLines.length === 4)
   check('displayLines 含林晚台词 + 无角色旁白行（不含其它角色）', page.displayLines.length === 2 && page.displayLines.every((l) => l.role === '林晚' || l.role === null), page.displayLines.map((l) => l.role).join(','))
   check('displayLines 行数 < allLines（其余角色被隐藏）', page.displayLines.length < page.allLines.length)
-  check('contentHeight 随 displayLines 缩小', page.contentHeight === page.displayLines.length * page.data.lineHeightPx)
+  // 2026-10-28：行高不再写死「行数 × 行高」——超出屏宽的行按 2 行算高（否则会叠字），
+  // 所以这里断言「内容高度 = 各行高度之和」，且不超过未筛选时的比例。
+  check('contentHeight 随 displayLines 缩小',
+    page.contentHeight === (page._lineHs || []).reduce((a, b) => a + b, 0) &&
+    page.contentHeight >= page.displayLines.length * page.data.lineHeightPx,
+    'contentHeight=' + page.contentHeight + ' lines=' + page.displayLines.length + ' lineH=' + page.data.lineHeightPx)
   check('筛选时保留无角色旁白行（标题/说明不再丢失）', page.displayLines.some((l) => l.role === null))
 }
 
