@@ -10,3 +10,6 @@ project.private.config.json
 
 # 已废弃脚本（本地回收站）
 .trash/
+
+# WorkBuddy 会话数据 / AI 记忆（不入库）
+.workbuddy/
