@@ -13,15 +13,34 @@
  * - 本模块是纯函数，不碰 wx API、不碰页面状态，便于 node 直跑测试。
  */
 
-/** 字/分钟：下限、上限、步进、默认 */
+/** 字/分钟：下限、上限、步进、默认
+ *
+ * 上限演进：600 → 1200 → 3000 →（2026-10-29 收窄）1500。
+ *   3000 那一档在实际使用里是空转：一屏 1.15 秒，眼睛根本跟不上，
+ *   滑块上段 1/4 行程（860→3000）等于白给。收窄到 1500 后：
+ *   一屏约 2.3 秒，仍是明确的「快进」，但每一段行程都用得上。
+ *   下限 20 不动（慢速读稿、逐句核对都要用），默认 200 不动。
+ *
+ * 分布仍是对数刻度，所以「等比缩半」不会把低段挤扁：
+ *   0%=20 / 25%=60 / 50%=170 / 75%=510 / 100%=1500，
+ *   默认 200 正好落在 53%（视觉中间），往上一格约 ×1.7。
+ *
+ * 注意：数值本身是**诚实**的 —— 1200 就是 20 字/秒，1500 是 25 字/秒。 */
 const CPM_MIN = 20
-const CPM_MAX = 600
+const CPM_MAX = 1500
 const CPM_STEP = 10
 const CPM_DEFAULT = 200
 
-/** 旧版速度标尺（0–50，1 单位 ≈ 4px/s），仅用于兼容老存档 */
+/** 旧版速度标尺（0–125，1 单位 = 4px/s），仅用于兼容老存档。
+ *
+ * 2026-10-29 从 200 收到 125，和 cpm 上限 1500 对齐：
+ *   cpm 1500 在典型版式下约 290–350px/s（≈73–88 单位），
+ *   短句密集的稿子每字更高，极端约 500px/s（=125 单位）。
+ *   留 125 既能装下新的上限，又不会出现「切成像素单位后还能拖到
+ *   比 1500 字/分更快、再切回来被钳掉」这种两头不一致。
+ * 老存档里 0–50 的值语义完全不变（只是上限变化，不影响历史数据）。 */
 const LEGACY_SPEED_MIN = 0
-const LEGACY_SPEED_MAX = 50
+const LEGACY_SPEED_MAX = 125
 const LEGACY_SPEED_DEFAULT = 8
 const LEGACY_PX_PER_SEC = 4
 
@@ -205,6 +224,23 @@ function resolveSpeed(settings, ctx) {
   return { msPerPx: Infinity, source: 'zero' }
 }
 
+/**
+ * cpm ↔ 0..1 的对数映射。
+ *
+ * 速度是**比例量**：从 200 加到 400（翻倍）和从 600 加到 1200（翻倍），
+ * 手感上应该占同样的滑块行程。线性刻度做不到这点 ——
+ * 20–1200 的区间里，200 会挤在 15% 处，而 200→300 只占 4% 行程，几乎调不动。
+ */
+function cpmRatio(cpm) {
+  const v = Math.min(CPM_MAX, Math.max(CPM_MIN, num(cpm, CPM_DEFAULT)))
+  return Math.log(v / CPM_MIN) / Math.log(CPM_MAX / CPM_MIN)
+}
+
+function cpmFromRatio(ratio) {
+  const r = Math.min(1, Math.max(0, num(ratio, 0)))
+  return clampCpm(CPM_MIN * Math.pow(CPM_MAX / CPM_MIN, r))
+}
+
 /* ------------------------------ 单位迁移 ------------------------------ */
 
 /**
@@ -330,5 +366,7 @@ module.exports = {
   migrateSpeedSettings,
   switchSpeedUnit,
   clampCpm,
+  cpmRatio,
+  cpmFromRatio,
   clampLegacySpeed
 }

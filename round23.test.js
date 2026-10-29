@@ -306,15 +306,15 @@ ok('showMenu 与 menuHeight 同帧落定（无中间态）',
 const shrinkAfter = showIdx >= 0 && events.slice(showIdx + 1).some(e => typeof e.menuHeight === 'number')
 ok('打开后无二次改高度（根除中央闪现）', shrinkAfter === false)
 
-console.log('\n=== 23-15. 速度上限：cpm 600（浅纸真值）===')
+console.log('\n=== 23-15. 速度上限：cpm 1500（2026-10-29 收窄：600→1200→3000→1500）===')
 const timeline = require('./miniprogram/engine/timeline.js')
-ok('timeline.CPM_MAX = 600', timeline.CPM_MAX === 600, `CPM_MAX=${timeline.CPM_MAX}`)
+ok('timeline.CPM_MAX = 1500', timeline.CPM_MAX === 1500, `CPM_MAX=${timeline.CPM_MAX}`)
 const tp9 = makePage(tpDef)
 pageInstanceRef = tp9
 tp9.onLoad({ id: SID })
 stepFrames(2)
 tp9._applySpeed(9999)
-ok('超速被钳到 600 字/分', tp9.data.speed === 600, `speed=${tp9.data.speed}`)
+ok('超速被钳到 1500 字/分', tp9.data.speed === 1500, `speed=${tp9.data.speed}`)
 
 console.log('\n=== 23-16. 台词区宽度（百分比）与左右留白联动 ===')
 const tp10 = makePage(tpDef)
@@ -382,11 +382,13 @@ ok('保存后导航栏标题与保存标题一致', ed2.data.navTitle === '最�
 // ---------- 首页页脚：固定展示语义化版本号 ----------
 console.log('\n=== 23-20. 首页底部页脚：固定展示语义化版本号 vX.Y.Z（含版权/更新日期）===')
 const cfg = require('./miniprogram/config.js')
-ok('config 暴露语义化版本 1.0.0', cfg && cfg.APP_VERSION === '1.0.0', `APP_VERSION=${cfg && cfg.APP_VERSION}`)
+// 版本号每次发版都会变，断言「是不是合法 SemVer」而不是写死某个值，
+// 否则每升一次版本都要来改测试，改着改着就有人直接把断言删掉。
+ok('config 暴露合法语义化版本（X.Y.Z）', !!cfg && /^\d+\.\d+\.\d+$/.test(cfg.APP_VERSION), `APP_VERSION=${cfg && cfg.APP_VERSION}`)
 const idxFooter = makePage(idxDef)
-ok('首页 data.version 以 v 前缀展示语义化版本', idxFooter.data.version === 'v1.0.0', `version=${idxFooter.data.version}`)
+ok('首页 data.version 以 v 前缀展示 config 里的版本', idxFooter.data.version === 'v' + cfg.APP_VERSION, `version=${idxFooter.data.version}`)
 ok('页脚版权文本含版权符号与主体', /©/.test(idxFooter.data.footerCopyright) && idxFooter.data.footerCopyright.indexOf(cfg.COPYRIGHT_OWNER) >= 0, `copy=${idxFooter.data.footerCopyright}`)
-ok('页脚更新日期非空且格式为 YYYY-MM-DD', /更新于 \d{4}-\d{2}-\d{2}/.test(idxFooter.data.footerUpdate), `update=${idxFooter.data.footerUpdate}`)
+ok('页脚更新日期非空且格式为 YYYY.MM.DD / YYYY-MM-DD', /更新于 \d{4}[.-]\d{2}[.-]\d{2}/.test(idxFooter.data.footerUpdate), `update=${idxFooter.data.footerUpdate}`)
 
 // ---------- 编辑页标题：命名规则 + 输入框显示/编辑（遮挡·不可见回归） ----------
 console.log('\n=== 23-21. 编辑页标题：autoName 命名 + 标题输入框可查看/聚焦（标题显示缺陷回归）===')

@@ -1,6 +1,10 @@
 {
   "usingComponents": {},
+  "navigationStyle": "custom",
   "navigationBarTitleText": "宝哥提词器",
+  "navigationBarBackgroundColor": "#F2EDE2",
+  "navigationBarTextStyle": "black",
+  "backgroundColor": "#F2EDE2",
   "enablePullDownRefresh": true,
-  "backgroundTextStyle": "light"
+  "backgroundTextStyle": "dark"
 }

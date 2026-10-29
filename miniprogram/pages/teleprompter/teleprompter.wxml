@@ -6,8 +6,12 @@
     2) 单一 transform 容器：translate3d(0, -offset, 0)，ScrollEngine 逐帧推 offset。
     3) 角色名内联渲染（rolePrefix + body 同一行），行高等高。
     4) 菜单网格 + 竖滑块 + 横竖屏切换，与浅纸同构。
+    5) 安全区以 JS 读到的 safeArea 为准，通过 CSS 变量下发（env() 在安卓常为 0）。
 -->
-<view class="tp-root" style="background: {{bg}};">
+<view
+  class="tp-root"
+  style="background: {{bg}}; --safe-t: {{safeTop}}px; --safe-b: {{safeBottom}}px; --safe-l: {{safeLeft}}px; --safe-r: {{safeRight}}px;"
+>
   <view class="tp-stage {{mirror ? 'tp-mirror' : ''}}">
 
     <!-- ── 提词内容区：单 transform 容器 + 虚拟列表 ── -->
@@ -24,11 +28,11 @@
         style="transform: translate3d(0, {{-offset}}px, 0); will-change: transform; font-family: {{fontFamily}};"
       >
         <view class="tp-pad" style="height: {{startPad}}px;"></view>
-        <!-- visibleTop：虚拟列表切片在整篇文本里的 y，缺了它长稿越滚越偏 -->
-        <view class="tp-lines" style="margin: {{visibleTop}}px {{marginHorizontal}}px 0;">
+        <!-- 全量渲染：滚动期间只有外层 transform 变，列表一个节点都不重建 -->
+        <view class="tp-lines" style="margin: 0 {{marginHorizontal}}px;">
           <view
             class="tp-line tp-align-{{textAlign}} {{line.blob ? 'tp-blob-line' : ''}}"
-            wx:for="{{visibleLines}}"
+            wx:for="{{lines}}"
             wx:key="_i"
             wx:for-item="line"
             style="{{line.blob ? '' : 'min-height: ' + lineHeightPx + 'px; line-height: ' + lineHeightPx + 'px;'}}"
@@ -56,8 +60,9 @@
     <view class="tp-end-glow {{finished ? 'tp-end-glow--on' : ''}}"></view>
   </view>
 
-  <!-- 时钟（浅纸默认开启） -->
-  <view wx:if="{{showClocks}}" class="tp-clock">{{clockText}}</view>
+  <!-- 时钟：位置由 JS 读到的安全区决定（刘海/挖孔屏不会压住），
+       不依赖 env() —— 该变量在部分安卓机型恒为 0 -->
+  <view wx:if="{{showClocks}}" class="tp-clock" style="top: {{safeTop + 8}}px;">{{clockText}}</view>
 
   <!-- 右侧竖条进度：可拖、可点 -->
   <view
@@ -70,8 +75,13 @@
     <view class="tp-progress-fill" style="height: {{progressValue}}%;"></view>
   </view>
 
-  <!-- 右下角红色圆钮：打开设置菜单（浅纸 script-fab 同款） -->
-  <view class="tp-fab" catchtap="onOpenMenu">
+  <!-- 右下角红色圆钮：打开设置菜单（浅纸 script-fab 同款）
+       right/bottom 都要让开安全区：横屏右侧刘海 + 底部 Home 指示条 -->
+  <view
+    class="tp-fab"
+    style="right: {{safeRight + 16}}px; bottom: {{safeBottom + 16}}px;"
+    catchtap="onOpenMenu"
+  >
     <view class="tp-fab-icon">☰</view>
   </view>
 
@@ -127,6 +137,9 @@
             </view>
           </view>
           <view class="tp-cell-val tp-val-tap" catchtap="onToggleSpeedUnit">{{speedText}}</view>
+          <!-- 引擎实际速度：拖动时跟着变，用来确认「调的数值真的到了引擎」。
+               只读、不抢触摸（pointer-events:none） -->
+          <view class="tp-cell-px">{{speedPxPerSec}}px/s</view>
           <view class="tp-cell-label">速度<text class="tp-unit">{{speedUnitText}}</text></view>
         </view>
 

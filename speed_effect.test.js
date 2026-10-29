@@ -62,7 +62,11 @@ global.wx = {
         const out = q._sels.map((sel) => {
           if (/\.tp-vtrack$/.test(sel)) return Object.assign({}, base)
           if (/\.tp-htrack$/.test(sel)) return { top: 400, bottom: 404, height: 4, width: 200, left: 20, right: 220 }
-          if (sel === '.tp-lines') return { top: 0, bottom: 2430, height: 2430, width: 343, left: 16, right: 359 }
+          // .tp-lines 故意返回 null：本文件关心的是「速度链路」，不是「高度标定」。
+          // 给一个写死的高度会让 _measureContent 把估算总高按固定比例缩放
+          // （短稿被放大 2.7 倍 → 每字像素虚高 → 速度快得像飞），
+          // 那是 mock 的假象，不是产品行为。量不到时回落估算值才是干净场景。
+          if (sel === '.tp-lines') return null
           return { top: 214, bottom: 346, height: 132, width: 60, left: 80, right: 140 }
         })
         q._cbs.forEach((f, i) => f(out[i] || null))
@@ -213,12 +217,12 @@ console.log('\n══════ 4. 菜单动画中（rect 在屏幕外）：�
   RECT_MODE = 'offscreen' // 先进入「动画中」的状态，再开菜单（真机就是这样）
   p.onOpenMenu()
   const before = p.data.settings.speedCpm // 200
-  // 只拖 12px：若拿离屏 rect 算「绝对位置」，会直接跳到某个极值（0% 或 100%）；
-  // 正确行为是按相对位移走，增量应该是「12/46 ≈ 四分之一区间」量级。
+  // 只拖 12px：若拿离屏 rect 算「绝对位置」，会直接跳到某个极值（20 或 1500）；
+  // 正确行为是按相对位移走 —— 12/46 ≈ 26% 行程，对数刻度下约 ×3.7（200 → ≈740）。
   drag(p, 288, { from: 300 })
   const after = p.data.settings.speedCpm
   ok('离屏几何不被拿去算绝对位置（不会一碰就甩到极值）',
-    after > before && after < before + 300, `cpm ${before}→${after}`)
+    after > before && after < 1200, `cpm ${before}→${after}`)
   ok('离屏时拖动仍生效', after !== before, `${before}→${after}`)
   ok('离屏时不会误判到最慢', after > timeline.CPM_MIN, 'cpm=' + after)
 }
@@ -295,6 +299,99 @@ console.log('\n══════ 8. 其他滑块不受影响（改速度不能�
   ok('调速度没改字号', p.data.settings.fontSize === fs0, `${fs0}→${p.data.settings.fontSize}`)
   ok('调速度没改行距', p.data.settings.lineHeight === lh0, `${lh0}→${p.data.settings.lineHeight}`)
   ok('调速度没触发重新排版（textHeight 稳定）', p.data.textHeight > 0)
+}
+
+console.log('\n══════ 9. 暴露给界面的「引擎实际速度」必须与引擎一致 ══════')
+{
+  // speedPxPerSec 是 _configureEngine 写进 data 的，菜单里显示它，
+  // 用来让用户自己确认「数字调了以后，引擎到底跑多快」。
+  const p = fresh()
+  p.onOpenMenu(); step(120)
+  ok('初始就有 px/s 读数', p.data.speedPxPerSec > 0, 'px/s=' + p.data.speedPxPerSec)
+  ok('读数与引擎一致（±0.11）',
+    Math.abs(p.data.speedPxPerSec - p.engine.pxPerSecond) < 0.11,
+    `${p.data.speedPxPerSec} vs ${p.engine.pxPerSecond.toFixed(2)}`)
+
+  drag(p, 210)
+  const fast = p.data.speedPxPerSec
+  drag(p, 320)
+  const slow = p.data.speedPxPerSec
+  ok('拖动后 px/s 读数跟着变（自证链路通了）', fast > slow, `${slow} → ${fast}`)
+  ok('px/s 读数仍与引擎同步',
+    Math.abs(p.data.speedPxPerSec - p.engine.pxPerSecond) < 0.11,
+    `${p.data.speedPxPerSec} vs ${p.engine.pxPerSecond.toFixed(2)}`)
+}
+
+console.log('\n══════ 10. 同一个「字/分」，长稿短稿速度必须一样 ══════')
+{
+  // 旧口径拿「整篇时长 ÷ 可滚动距离」，分母里混进了 0.5 屏起播留白 + 0.75 屏结束留白，
+  // 短稿被留白稀释 → 同样 200 字/分，短稿比长稿慢一大截。
+  // 现在改成「每字纵向像素」口径：只跟字号/行距有关，与稿件长度无关。
+  const longText = Array.from({ length: 60 }, (_, i) => `林晚：这是第 ${i + 1} 句，用来把稿子撑长。`).join('\n')
+  const shortText = Array.from({ length: 8 }, (_, i) => `林晚：这是第 ${i + 1} 句，短稿。`).join('\n')
+
+  function pxAt(text, cpm) {
+    const sc = store.create('测速' + cpm + text.length, text)
+    store.save(sc)
+    const p = Object.create(def)
+    p.data = JSON.parse(JSON.stringify(def.data))
+    p.setData = function (x) { if (x && typeof x === 'object') Object.assign(this.data, x) }
+    p.onLoad({ id: sc.id }); p.onReady()
+    step(250)
+    p._applySliderValue('vs-speed', cpm)
+    step(80)
+    return { px: p.engine.pxPerSecond, chars: p._charCount }
+  }
+
+  const a = pxAt(longText, 200)
+  const b = pxAt(shortText, 200)
+  const diff = Math.abs(a.px - b.px) / Math.max(1, a.px)
+  ok('长稿/短稿在 200 字/分下速度接近（≤12%）', diff < 0.12,
+    `长稿 ${a.px.toFixed(1)} px/s（${a.chars} 字） vs 短稿 ${b.px.toFixed(1)} px/s（${b.chars} 字），差 ${(diff * 100).toFixed(1)}%`)
+
+  // 速度区间要拉得开：上限 / 下限 = 75 倍（2026-10-29 从 150 倍收窄）
+  const fastest = pxAt(shortText, 1500).px
+  const slowest = pxAt(shortText, 20).px
+  ok('20 → 1500 字/分，速度跨度接近 75 倍', fastest / Math.max(0.01, slowest) > 60,
+    `${slowest.toFixed(1)} → ${fastest.toFixed(1)} px/s（${(fastest / Math.max(0.01, slowest)).toFixed(1)}×）`)
+
+  // 「拉到最大仍嫌慢」这条反馈要能被量化验证：
+  // 1200 字/分滚一屏 ≤3.5 秒；上限 1500 要 ≤2.5 秒，否则当不了快进。
+  const screenSec = 812 / pxAt(shortText, 1200).px
+  ok('1200 字/分：一屏 ≤ 3.5 秒', screenSec <= 3.5, `实测 ${screenSec.toFixed(2)} 秒/屏`)
+  const screenSecMax = 812 / pxAt(shortText, 1500).px
+  ok('1500 字/分：一屏 ≤ 2.5 秒（仍能快进）', screenSecMax <= 2.5,
+    `实测 ${screenSecMax.toFixed(2)} 秒/屏`)
+}
+
+console.log('\n══════ 11. 滑块对数刻度：默认 200 应该落在中间，不是贴底 ══════')
+{
+  // 区间从 580 扩到 1180 后，线性刻度会把 200 挤到 15% 处，
+  // 且 200→300 只占 4% 行程，等于"低段调不动、高段一拖就飞"。
+  const p = fresh()
+  p.onOpenMenu(); step(120)
+
+  p._applySliderValue('vs-speed', 200); step(40)
+  const pct200 = p.data.pctSpeed
+  ok('200 字/分落在滑块中间附近（45%–65%）', pct200 >= 45 && pct200 <= 65, `pct=${pct200}%`)
+
+  p._applySliderRatio('vs-speed', 0)
+  ok('拉到最底 = 20 字/分', p.data.settings.speedCpm === 20, 'cpm=' + p.data.settings.speedCpm)
+  p._applySliderRatio('vs-speed', 1)
+  ok('拉到最顶 = 1500 字/分', p.data.settings.speedCpm === 1500, 'cpm=' + p.data.settings.speedCpm)
+
+  p._applySliderRatio('vs-speed', 0.5)
+  const mid = p.data.settings.speedCpm
+  ok('滑块中点 ≈ 170 字/分（20 与 1500 的对数中位）', mid >= 150 && mid <= 200, 'cpm=' + mid)
+
+  // 每一段行程都应该对应「同样的倍数」：走 1/4 行程速度约 ×2.8
+  p._applySliderValue('vs-speed', 200); step(30)
+  const base = p.data.settings.speedCpm
+  const before = p._pctOfSpeed(p.data.settings)
+  p._applySliderRatio('vs-speed', Math.min(1, before / 100 + 0.25))
+  const ratio = p.data.settings.speedCpm / base
+  ok('走 1/4 行程速度约变成 2.9 倍（对数刻度）', ratio > 2.3 && ratio < 3.6,
+    `${base} → ${p.data.settings.speedCpm}（×${ratio.toFixed(2)}）`)
 }
 
 console.log('\n' + '─'.repeat(52))

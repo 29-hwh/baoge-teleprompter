@@ -106,9 +106,10 @@ console.log('\n═══ 3. index 页：拆分导入自动建文件夹并归组 
 
 console.log('\n═══ 4. 提词台：虚拟列表裁剪（2026-10-28 恢复原有逐帧内核）═══')
 {
-  // 本轮把「全量渲染 + 原生动画」恢复回「虚拟列表 + ScrollEngine 逐帧」。
-  // 这里钉住新契约：短稿窗口够大则全量可见；长稿只渲染视口附近的行，
-  // 且虚拟列表不取模（首行就是第一行，不会把稿子结尾接到开头）。
+  // 2026-10-29：从「虚拟列表 + 换批」改成「全量渲染 + 只动 transform」。
+  // 换批那一帧要重建几十个节点 → 必掉一帧，观感就是「间歇性跳一下」。
+  // 新契约：渲染列表 == 全部台词，首行就是第一行、末行就是最后一行，
+  // 滚到任何位置都不换列表（所以不可能出现「结尾接到开头」或白屏）。
   let cfg2 = null
   global.Page = (o) => { cfg2 = o }
   require('./miniprogram/pages/teleprompter/teleprompter.js')
@@ -116,35 +117,32 @@ console.log('\n═══ 4. 提词台：虚拟列表裁剪（2026-10-28 恢复�
   Object.keys(cfg2).forEach((k) => { if (k !== 'data' && typeof cfg2[k] === 'function') p2[k] = cfg2[k].bind(p2) })
   p2.setData = function (obj) { Object.assign(this.data, obj) }
 
-  // 短稿：窗口（行高 40、视口 600）能放下 12 行，全量可见
-  p2.allLines = Array.from({ length: 12 }, (_, i) => ({
+  const makeLines = (n) => Array.from({ length: n }, (_, i) => ({
     _i: i, role: null, rolePrefix: '', body: '第' + (i + 1) + '行台词',
     color: null, prefixColor: '#fff', bodyColor: '#fff', sectionIndex: 0
   }))
-  p2.displayLines = p2.allLines
+
+  p2.displayLines = makeLines(12)
   p2.data.lineHeightPx = 40
   p2.data.startPad = 0
   p2.data.blobMode = false
   p2.winHeight = 600
   p2.engine = { current: 0 }
   p2._updateVisible(true)
-  const v0 = p2.data.visibleLines
-  ok('短稿（12 行）窗口够大，全部可见', v0.length === 12, 'len=' + v0.length)
-  ok('首行即台词第一行（虚拟列表不取模、不接结尾）', v0[0].body === '第1行台词', v0[0] && v0[0].body)
+  const v0 = p2.data.lines
+  ok('短稿（12 行）全量渲染', v0.length === 12, 'len=' + v0.length)
+  ok('首行即台词第一行（不取模、不接结尾）', v0[0].body === '第1行台词', v0[0] && v0[0].body)
   ok('末行即台词最后一行', v0[v0.length - 1].body === '第12行台词', v0[v0.length - 1].body)
 
-  // 长稿：只渲染视口附近的行，裁剪生效
-  p2.allLines = Array.from({ length: 300 }, (_, i) => ({
-    _i: i, role: null, rolePrefix: '', body: '第' + (i + 1) + '行台词',
-    color: null, prefixColor: '#fff', bodyColor: '#fff', sectionIndex: 0
-  }))
-  p2.displayLines = p2.allLines
-  p2.data.visibleStart = -1 // 强制重裁
-  p2.engine = { current: 0 }
+  // 长稿：同样是全量，列表不再随滚动换批
+  const longLines = makeLines(300)
+  p2.displayLines = longLines
+  p2.engine = { current: 9000 } // 滚到中间
   p2._updateVisible(true)
-  const v1 = p2.data.visibleLines
-  ok('长稿只渲染视口附近的行（虚拟列表裁剪）', v1.length < 300, 'len=' + v1.length)
-  ok('裁剪窗口从第 0 行开始（不提前显示结尾）', p2.data.visibleStart === 0, 'start=' + p2.data.visibleStart)
+  const v1 = p2.data.lines
+  ok('长稿也是全量渲染（滚动期间零重建）', v1.length === 300, 'len=' + v1.length)
+  ok('列表引用就是 displayLines，滚到哪都不换', v1 === longLines)
+  ok('第 0 行仍是第一行（不会把结尾接到开头）', v1[0].body === '第1行台词')
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

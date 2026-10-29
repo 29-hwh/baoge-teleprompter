@@ -12,7 +12,7 @@ const path = require('path')
 const { spawn } = require('child_process')
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-const [htmlPath, outPath, wIn = 1040, hIn = 800] = process.argv.slice(2)
+const [htmlPath, outPath, wIn = 1040, hIn = 800, dprIn = 1] = process.argv.slice(2)
 if (!htmlPath || !outPath) {
   console.error('用法：node tools/guide_fit/shot_page.js <html> <out.png> [宽] [高]')
   process.exit(1)
@@ -72,7 +72,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
     })
 
   await send('Page.enable')
-  await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false })
+  await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: +dprIn || 1, mobile: false })
   await send('Page.navigate', { url: 'file://' + path.resolve(htmlPath) })
   await sleep(700)
   const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })
@@ -81,7 +81,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   console.log(`已截图 ${outPath}（页面高 ${result.value}px，视口 ${W}px 宽）`)
   ws.close()
   proc.kill()
-  fs.rmSync(udd, { recursive: true, force: true })
+  // Chrome 退出时还在写 Default/ 目录，立刻 rmSync 会 ENOTEMPTY；
+  // 以前这个异常被当成截图失败（exit 1），批量截图脚本因此中断。
+  await sleep(250)
+  try { fs.rmSync(udd, { recursive: true, force: true, maxRetries: 3, retryDelay: 120 }) } catch {}
   process.exit(0)
 })().catch((e) => {
   console.error('失败:', e.message)

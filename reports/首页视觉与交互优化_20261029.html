@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>宝哥提词器 · 首页视觉与交互优化（2026-10-29）</title>
+<style>
+  :root{
+    --paper:#F2EDE2; --card:#FBF7EE; --card2:#F6F1E5;
+    --ink:#191710; --ink2:#4C463A; --ink3:#6E6759;
+    --rule:#DCD4C3; --rule2:#C3B9A3;
+    --red:#BF3B27; --red-deep:#8E2B1B; --red-wash:#EFDFD8;
+    --serif:'Songti SC','Noto Serif CJK SC','Source Han Serif SC','STSong',serif;
+    --mono:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'PingFang SC','Helvetica Neue',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--sans); font-size:15px; line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:900px; margin:0 auto; padding:64px 44px 96px;}
+
+  /* ── 报头 ── */
+  .kicker{
+    display:flex; align-items:center; gap:10px;
+    font-family:var(--mono); font-size:11px; letter-spacing:.22em;
+    color:var(--ink3); text-transform:uppercase;
+  }
+  .kicker::before{content:''; width:6px; height:6px; background:var(--ink2);}
+  h1{
+    margin:14px 0 0; font-family:var(--serif); font-size:42px; font-weight:600;
+    line-height:1.2; letter-spacing:.01em;
+  }
+  .sub{margin:10px 0 0; color:var(--ink3); font-size:14px;}
+  .meta{
+    display:flex; flex-wrap:wrap; gap:8px 22px; margin-top:20px;
+    font-family:var(--mono); font-size:11.5px; color:var(--ink3); letter-spacing:.04em;
+  }
+  .meta b{color:var(--ink); font-weight:600;}
+  .hr{height:1px; background:var(--rule); margin:28px 0 0;}
+  .hr--tight{margin:22px 0;}
+
+  /* ── 章节 ── */
+  h2{
+    margin:52px 0 4px; font-family:var(--serif); font-size:24px; font-weight:600;
+    letter-spacing:.01em;
+  }
+  h2 .no{
+    font-family:var(--mono); font-size:11px; color:var(--red); letter-spacing:.18em;
+    display:block; margin-bottom:6px;
+  }
+  h3{margin:30px 0 8px; font-size:15.5px; font-weight:600; letter-spacing:.01em;}
+  p{margin:10px 0; color:var(--ink2);}
+  p.lead{font-size:16px; color:var(--ink);}
+  strong{color:var(--ink); font-weight:600;}
+  em{font-style:normal; background:linear-gradient(transparent 62%, var(--red-wash) 62%); padding:0 2px;}
+  code{
+    font-family:var(--mono); font-size:.86em; background:var(--card2);
+    border:1px solid var(--rule); border-radius:2px; padding:1px 5px; color:var(--ink);
+  }
+  ul{margin:10px 0; padding-left:1.15em; color:var(--ink2);}
+  li{margin:6px 0;}
+  li::marker{color:var(--rule2);}
+
+  /* ── 卡片块 ── */
+  .panel{
+    background:var(--card); border:1px solid var(--rule); border-radius:4px;
+    padding:20px 22px; margin:18px 0;
+  }
+  .panel--flat{background:transparent; border-left:3px solid var(--red); border-radius:0; padding:6px 0 6px 18px;}
+
+  /* ── 色卡 ── */
+  .swatches{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:18px 0 6px;}
+  .sw{border:1px solid var(--rule); border-radius:3px; overflow:hidden; background:var(--card);}
+  .sw i{display:block; height:56px;}
+  .sw div{padding:8px 10px;}
+  .sw b{display:block; font-size:12.5px; font-weight:600;}
+  .sw span{display:block; font-family:var(--mono); font-size:10.5px; color:var(--ink3); letter-spacing:.04em;}
+
+  /* ── 字阶 ── */
+  .scale{border-top:1px solid var(--rule); margin:18px 0;}
+  .row{
+    display:grid; grid-template-columns:1fr 156px; gap:14px; align-items:baseline;
+    padding:12px 0; border-bottom:1px solid var(--rule);
+  }
+  .row .spec{
+    font-family:var(--mono); font-size:11px; color:var(--ink3); letter-spacing:.03em;
+    text-align:right; line-height:1.5;
+  }
+  .t-serif{font-family:var(--serif); font-weight:600; line-height:1.15;}
+  .t-mono{font-family:var(--mono);}
+  .t-sans{font-family:var(--sans);}
+
+  /* ── 表格 ── */
+  table{width:100%; border-collapse:collapse; margin:16px 0; font-size:13.5px;}
+  th,td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--rule); vertical-align:top;}
+  th{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--ink3); font-weight:500; border-bottom-color:var(--rule2);
+  }
+  td:first-child{color:var(--ink); font-weight:600;}
+  td.num{font-family:var(--mono); font-size:12px; color:var(--ink2); white-space:nowrap;}
+  tbody tr:hover{background:var(--card2);}
+
+  /* ── 截图 ── */
+  .shots{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:20px 0 8px; align-items:start;}
+  .shot{background:var(--card); border:1px solid var(--rule); border-radius:3px; overflow:hidden;}
+  .shot img{display:block; width:100%; height:auto;}
+  /* 统一取景框 —— 否则 812px 的空态和 1538px 的长列表并排，行高参差像排版事故 */
+  .shots--strip{grid-template-columns:repeat(4,1fr);}
+  .shots--strip .shot img{aspect-ratio:3/4; object-fit:cover; object-position:top center;}
+  .shots--pair{grid-template-columns:repeat(2,1fr);}
+  .shots--pair .shot img{aspect-ratio:4/5; object-fit:cover; object-position:top center;}
+  .shot figcaption{
+    padding:8px 10px; font-family:var(--mono); font-size:10.5px; color:var(--ink3);
+    letter-spacing:.05em; border-top:1px solid var(--rule); background:var(--card);
+  }
+  .shot--wide{grid-column:span 2;}
+  figure{margin:0;}
+
+  /* ── 结论文档 ── */
+  .ok{color:#2E6B3F; font-weight:600;}
+  .warn{color:var(--red-deep); font-weight:600;}
+  .tag{
+    display:inline-block; font-family:var(--mono); font-size:10px; letter-spacing:.1em;
+    padding:2px 6px; border:1px solid var(--rule2); border-radius:2px; color:var(--ink3);
+    margin-right:6px; vertical-align:1px;
+  }
+  .foot{
+    margin-top:56px; padding-top:18px; border-top:1px solid var(--rule);
+    font-family:var(--mono); font-size:10.5px; color:var(--ink3); letter-spacing:.05em;
+    display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  }
+  @media (max-width:680px){
+    .wrap{padding:40px 20px 64px;}
+    h1{font-size:30px;}
+    .shots{grid-template-columns:repeat(2,1fr);}
+    .shot--wide{grid-column:span 2;}
+    .row{grid-template-columns:1fr; gap:2px;}
+    .row .spec{text-align:left;}
+  }
+  @media print{
+    body{background:#fff;}
+    .wrap{max-width:none; padding:0;}
+    h2{page-break-after:avoid;}
+    .shot,figure,table{page-break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="kicker">BaoGe Teleprompter · Design Spec</div>
+  <h1>首页视觉与交互优化</h1>
+  <p class="sub">片场稿纸（Call Sheet）—— 把「台本库」做成一张场记单</p>
+
+  <div class="meta">
+    <span>日期 <b>2026-10-29</b></span>
+    <span>范围 <b>pages/index</b></span>
+    <span>回归 <b class="ok">49 / 49 套通过</b></span>
+    <span>代码体检 <b class="ok">0 告警</b></span>
+  </div>
+
+  <div class="hr"></div>
+
+  <h2><span class="no">01 / POSITIONING</span>风格定位</h2>
+
+  <p class="lead">不是「工具 App」，是<strong>一叠写好字的纸</strong>。整个首页用暖纸底、墨黑字、衬线标题、等宽数字、发丝线分隔，做成印刷品的版面感；朱红只留给「能开拍的东西」。</p>
+
+  <p>选这个方向不是审美偏好，是三个具体理由：</p>
+  <ul>
+    <li><strong>对标物是纸。</strong>产品卖的是台本，用户脑子里最原生的画面就是「一页稿纸」。竞品（提词器类）清一色深色科技风、大面积渐变，反而没有一个占住「纸」这个位置。</li>
+    <li><strong>使用场景在外景。</strong>摄影师、短视频团队大量在户外强光下用手机。浅底深字在正午阳光下可读性远好于深色界面，这不是风格问题，是可用性问题。</li>
+    <li><strong>衬线 + 等宽是低成本的辨识度。</strong>不改架构、不引字体包，只用系统自带的宋体与 SF Mono 就能做出「编辑过的」气质——比加渐变、加阴影便宜得多。</li>
+  </ul>
+
+  <div class="panel panel--flat">
+    <p style="margin:4px 0"><strong>设计原则（全站口径）：</strong>约束比装饰更有设计感。整页只有一款主色（墨）、一款强调色（朱红）、两档字族（衬线标题／等宽数字）、一套 4–6px 圆角、一种入场动效。</p>
+  </div>
+
+  <h2><span class="no">02 / TOKENS</span>设计令牌</h2>
+
+  <h3>色板</h3>
+  <div class="swatches">
+    <div class="sw"><i style="background:#F2EDE2"></i><div><b>纸</b><span>#F2EDE2</span></div></div>
+    <div class="sw"><i style="background:#FBF7EE"></i><div><b>卡片</b><span>#FBF7EE</span></div></div>
+    <div class="sw"><i style="background:#191710"></i><div><b>墨 · 主文字与主按钮</b><span>#191710</span></div></div>
+    <div class="sw"><i style="background:#4C463A"></i><div><b>正文</b><span>#4C463A</span></div></div>
+    <div class="sw"><i style="background:#6E6759"></i><div><b>次要／元信息</b><span>#6E6759</span></div></div>
+    <div class="sw"><i style="background:#DCD4C3"></i><div><b>发丝线</b><span>#DCD4C3</span></div></div>
+    <div class="sw"><i style="background:#C3B9A3"></i><div><b>描边／分隔加重</b><span>#C3B9A3</span></div></div>
+    <div class="sw"><i style="background:#BF3B27"></i><div><b>朱红（唯一强调色）</b><span>#BF3B27</span></div></div>
+  </div>
+
+  <h3>朱红使用纪律</h3>
+  <p>重做前全页有 <strong>8 处</strong>红色（套准标、报头短线、文件夹方块、角色标签、页签下划线、书脊、按钮、版本号），红一多就不红了。现在收敛为 <strong>5 处，全部与「开拍」或「最新」语义绑定</strong>：</p>
+  <table>
+    <thead><tr><th>位置</th><th>语义</th><th>是否保留</th></tr></thead>
+    <tbody>
+      <tr><td>焦点卡左书脊</td><td>这是你最近动过的稿子</td><td class="ok">保留</td></tr>
+      <tr><td>RECENT 标签 + 圆点</td><td>同上，文字化</td><td class="ok">保留</td></tr>
+      <tr><td>开始提词 / 卡片提词</td><td>唯一行动号召</td><td class="ok">保留</td></tr>
+      <tr><td>当前页签下划线</td><td>当前所在分区</td><td class="ok">保留</td></tr>
+      <tr><td>报头短线 / 套准标 / 文件夹方块 / 角色标签 / 版本号</td><td>纯装饰</td><td class="warn">改中性色</td></tr>
+    </tbody>
+  </table>
+
+  <h3>字阶（375px 基准）</h3>
+  <div class="scale">
+    <div class="row"><div class="t-serif" style="font-size:32px">台本</div><div class="spec">64rpx / 32px<br>Songti 600</div></div>
+    <div class="row"><div class="t-serif" style="font-size:21px">第一集 归期</div><div class="spec">42rpx / 21px<br>Songti 600</div></div>
+    <div class="row"><div class="t-serif" style="font-size:16.5px">短剧《归期》拆分 · 卡片标题</div><div class="spec">33rpx / 16.5px<br>Songti 600</div></div>
+    <div class="row"><div class="t-sans" style="font-size:14px">新建台本 / 导入文档</div><div class="spec">28rpx / 14px<br>PingFang 600</div></div>
+    <div class="row"><div class="t-sans" style="font-size:13px;color:#4C463A">第一场 办公室 日 林晚：小陈，这份报表今天必须发出去。</div><div class="spec">26rpx / 13px<br>PingFang 400</div></div>
+    <div class="row"><div class="t-mono" style="font-size:22px">119 字 · 刚刚</div><div class="spec">22rpx / 11px<br>SF Mono</div></div>
+    <div class="row"><div class="t-mono" style="font-size:10px;letter-spacing:2.6rpx;color:#6E6759">BAOGE · TELEPROMPTER</div><div class="spec">20rpx / 10px<br>SF Mono + 字距</div></div>
+  </div>
+  <p style="font-size:13px">数字一律等宽，保证「119 → 1,204 字」刷新时不抖动；标题一律衬线，正文一律无衬线，三档字体各司其职，不混用。</p>
+
+  <h3>间距 · 圆角 · 动效</h3>
+  <table>
+    <thead><tr><th>类别</th><th>取值</th><th>用法</th></tr></thead>
+    <tbody>
+      <tr><td>间距</td><td class="num">8 / 14 / 16 / 20 / 24 / 26 / 34 / 40 rpx</td><td>卡片内 24–26，卡片间 20，分节前 34，页脚前 40</td></tr>
+      <tr><td>圆角</td><td class="num">2 / 3 / 4 / 6 rpx</td><td>标签 2、按钮 3–4、卡片与输入 6（印刷品是方的，不用药丸）</td></tr>
+      <tr><td>描边</td><td class="num">1rpx</td><td>所有分隔线一律发丝线，不靠阴影堆层次</td></tr>
+      <tr><td>动效</td><td class="num">340ms 入场 / 180ms 按压</td><td>只做一次，不循环；系统开启「减弱动态效果」时全部关闭</td></tr>
+    </tbody>
+  </table>
+
+  <h2><span class="no">03 / COMPONENTS</span>组件规格</h2>
+
+  <figure class="shot" style="margin:18px 0 8px">
+    <img src="img/home_top_2x.png" alt="手机首屏 2 倍放大">
+    <figcaption>375pt 首屏 · 2× 截图（报头 / 主操作 / 焦点卡）</figcaption>
+  </figure>
+
+  <table>
+    <thead><tr><th>组件</th><th>关键尺寸</th><th>状态与行为</th></tr></thead>
+    <tbody>
+      <tr><td>报头</td><td class="num">top = 状态栏 + 46px</td><td>英文小标 10px／标题 32px／数字行 11px；右上角设置 38×38</td></tr>
+      <tr><td>主操作</td><td class="num">h 44px，gap 8px，1 : 1.15</td><td>新建＝墨黑实底，导入＝描边；按下 scale .99</td></tr>
+      <tr><td>焦点卡</td><td class="num">pad 13/14/11，书脊 3px</td><td>整卡进提词；右上「改稿」进编辑（热区扩到 44px）；书脊入场自上而下画出</td></tr>
+      <tr><td>页签</td><td class="num">h 38px，下划线 1.5px</td><td>文字 + 计数，不用药丸；切换时下划线从左展开 220ms</td></tr>
+      <tr><td>文件夹分节</td><td class="num">上 34rpx 细线 + 方块 5px</td><td>点名字改名、长按删整组、点箭头收起（箭头热区 26×22px）</td></tr>
+      <tr><td>台本卡</td><td class="num">pad 12/13/9，间距 20rpx</td><td>整卡进编辑，右下「提词」直达提词页；正文两行截断</td></tr>
+      <tr><td>列表收尾</td><td class="num">h 44px 虚线框</td><td>滚到底也能新建，替代原来的吸顶工具栏</td></tr>
+      <tr><td>空态</td><td class="num">稿纸 118×84，按钮宽 ≤260</td><td>打格稿纸 + 两条入口；内容在剩余空间内垂直居中</td></tr>
+      <tr><td>版权页</td><td class="num">细线 + 10px 等宽</td><td>跟随内容流，<strong>不再 fixed</strong></td></tr>
+    </tbody>
+  </table>
+
+  <h2><span class="no">04 / LAYOUT</span>版面与响应式</h2>
+
+  <p>这一轮最实的五处改动都在「结构」，不在皮肤：</p>
+
+  <table>
+    <thead><tr><th>问题</th><th>原因</th><th>改法</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>页脚压住列表</td>
+        <td>版本号用 <code>position:fixed</code> 悬在底部，永远盖住最后一屏</td>
+        <td>改成跟随内容流的版权页；滚到底自然结束</td>
+      </tr>
+      <tr>
+        <td>报头钻刘海／撞胶囊</td>
+        <td>页面切到 <code>navigationStyle:custom</code> 后从 y=0 开始画，原来的 26rpx 内边距不够</td>
+        <td>JS 读 <code>statusBarHeight</code> 算 <code>headTop = 状态栏 + 46px</code>，报头整体落在胶囊带下方</td>
+      </tr>
+      <tr>
+        <td>吸顶工具栏顶到状态栏</td>
+        <td><code>position:sticky; top:0</code> 在小程序里是贴屏幕顶，不是贴内容区顶</td>
+        <td>取消吸顶；列表末尾补「再新建一篇」虚线入口</td>
+      </tr>
+      <tr>
+        <td>平板右侧大片空白</td>
+        <td>宽屏用 <code>rpx</code>：768 屏上 1rpx=1.02px、1024 屏上 1rpx=1.37px，同一个 64rpx 标题会从 32px 涨到 87px</td>
+        <td>断点内改用 <code>px</code>（物理尺寸稳定），列表 2 列 / 超宽 3 列</td>
+      </tr>
+      <tr>
+        <td>单篇看着像属于上面的文件夹</td>
+        <td>两组之间只有 8px 间距，没有边界</td>
+        <td>补一条「单篇台本 ——— 2 篇」分节线（只在同时存在文件夹与单篇时出现）</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>断点</h3>
+  <table>
+    <thead><tr><th>档位</th><th>布局</th><th>单位</th></tr></thead>
+    <tbody>
+      <tr><td>≤ 340px</td><td>单列，收窄报头与内边距</td><td class="num">rpx 等比</td></tr>
+      <tr><td>341–599px</td><td>单列（主场景）</td><td class="num">rpx 等比</td></tr>
+      <tr><td>600–999px</td><td>限宽 860，台本卡两列，文件夹整行</td><td class="num">px 固定</td></tr>
+      <tr><td>≥ 1000px</td><td>限宽 980，台本卡三列</td><td class="num">px 固定</td></tr>
+    </tbody>
+  </table>
+
+  <div class="shots shots--pair">
+    <figure class="shot"><img src="img/home_768.png" alt="768 平板"><figcaption>768 · 平板两列（限宽 860，px 定尺）</figcaption></figure>
+    <figure class="shot"><img src="img/home_1024.png" alt="1024 横屏"><figcaption>1024 · 超宽三列（限宽 980）</figcaption></figure>
+  </div>
+
+  <h2><span class="no">05 / MOTION</span>交互与动效</h2>
+  <ul>
+    <li><strong>入场：</strong>焦点卡、页签、列表项依次上浮 8px + 淡入，340ms，`cubic-bezier(.22,.61,.36,1)`，每项延迟 30ms —— 让「最近在改」先落定，列表跟着铺开。</li>
+    <li><strong>书脊：</strong>焦点卡左侧红条自上而下「画」出来（440ms，延迟 140ms），像翻到某一页时视线落下。</li>
+    <li><strong>按压：</strong>卡片 scale .988 + 底色加深，按钮 scale .95–.99，统一 160–180ms。</li>
+    <li><strong>页签：</strong>下划线 <code>scaleX(0→1)</code> 从左展开，切换分区时不闪烁。</li>
+    <li><strong>无循环动画。</strong>提词器是长时间盯屏的工具，任何常驻动效都是干扰。</li>
+  </ul>
+
+  <h2><span class="no">06 / A11Y</span>无障碍</h2>
+  <div class="panel">
+    <table style="margin:0">
+      <thead><tr><th>对比组合</th><th>实测对比度</th><th>标准</th></tr></thead>
+      <tbody>
+        <tr><td>墨 / 纸</td><td class="num">15.36 : 1</td><td class="ok">AAA</td></tr>
+        <tr><td>正文 / 卡片</td><td class="num">8.75 : 1</td><td class="ok">AAA</td></tr>
+        <tr><td>次要文字 / 纸</td><td class="num">4.80 : 1</td><td class="ok">AA（≥4.5）</td></tr>
+        <tr><td>白字 / 朱红按钮</td><td class="num">5.43 : 1</td><td class="ok">AA</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul>
+    <li><strong>触摸目标：</strong>主操作 44px、焦点卡开拍 40px、卡片提词 38px；「改稿」与文件夹箭头视觉很小，但用 <code>::before</code> 把热区扩到 44×40 / 26×22，避免误触到相邻动作。</li>
+    <li><strong>系统偏好：</strong>尊重 <code>prefers-reduced-motion</code>，开启后入场与过渡全部关闭。</li>
+    <li><strong>横屏刘海：</strong>左右内边距叠加 <code>safeArea.left/right</code>，内容不会被挖孔切掉。</li>
+  </ul>
+
+  <h2><span class="no">07 / RESULT</span>实现结果</h2>
+
+  <p>手机四档的实际渲染（不是设计稿，是把真实的 <code>.wxml</code> + <code>.wxss</code> 机械翻译成 HTML 后截图）：</p>
+
+  <div class="shots shots--strip">
+    <figure class="shot"><img src="img/home_375.png" alt="375 全页"><figcaption>375 · 全页</figcaption></figure>
+    <figure class="shot"><img src="img/home_empty_375.png" alt="空态"><figcaption>375 · 空态</figcaption></figure>
+    <figure class="shot"><img src="img/home_notch_393.png" alt="刘海屏"><figcaption>393 · 刘海屏（状态栏 54）</figcaption></figure>
+    <figure class="shot"><img src="img/home_320.png" alt="320 小屏"><figcaption>320 · iPhone SE</figcaption></figure>
+  </div>
+  <p style="font-size:12.5px; color:var(--ink3)">四台手机的取景框统一裁到 3:4（从顶部取景）；完整长页请看上方 02 节的 2× 大图。</p>
+
+  <h2><span class="no">08 / VERIFY</span>验证结论</h2>
+
+  <table>
+    <thead><tr><th>项目</th><th>方法</th><th>结果</th></tr></thead>
+    <tbody>
+      <tr><td>回归测试</td><td class="num">49 套 test.js 全跑</td><td class="ok">49 / 49 通过，0 失败</td></tr>
+      <tr><td>新增契约测试</td><td class="num">index_layout.test.js · 28 条</td><td class="ok">通过</td></tr>
+      <tr><td>模板体检</td><td class="num">page_lint + wxml_lint</td><td class="ok">0 告警（5 页 / 14 处 wx:for）</td></tr>
+      <tr><td>视觉复核</td><td class="num">6 档尺寸真实渲染截图</td><td class="ok">已逐张目视确认</td></tr>
+      <tr><td>预览保真</td><td class="num">与真机盒模型对齐（border-box）</td><td class="ok">已修正两处假象</td></tr>
+    </tbody>
+  </table>
+
+  <h3>顺手修掉的两个「工具谎言」</h3>
+  <p>这一轮花了不少时间在<strong>让截图可信</strong>上，因为前两版截图把两个 bug 藏住了：</p>
+  <ul>
+    <li><strong>rpx 基准写死 375。</strong>截 768 宽时 rpx 仍按 0.5px 算，元素按手机尺寸画、百分比按平板算，于是「卡片只占一半、右边大片空白」——那不是布局 bug，是量具 bug。现在 <code>--w=768</code> 会让 rpx 真的变成 1.024px。</li>
+    <li><strong><code>view</code> 被译成 <code>div</code> 后丢了 <code>box-sizing:border-box</code>。</strong>真机上每个 <code>view</code> 都是 border-box，预览里变成 content-box，带 padding 的卡片凭空多出 34px 宽度，50% 的两列装不下就各自独占一行。补上全局规则后两列才真的并排。</li>
+  </ul>
+
+  <h3>还需要在真机上确认的</h3>
+  <ul>
+    <li>报头与微信胶囊的实际间距（各家 ROM 的 <code>getMenuButtonBoundingClientRect</code> 有 ±2px 差异）。</li>
+    <li>「改稿」与文件夹箭头的热区在真机上是否确实不误触相邻动作。</li>
+    <li>宋体（Songti SC）在部分安卓机的 fallback：若落到黑体，标题的衬线气质会减弱，需要确认是否要内置字体子集。</li>
+    <li>下拉刷新与自定义导航栏叠加时的回弹观感。</li>
+  </ul>
+
+  <div class="panel panel--flat">
+    <p style="margin:4px 0"><strong>一句话总结：</strong>这一轮把首页从「能用」推到「有主张」——纸的隐喻、衬线+等宽的编辑感、只留一种强调色。功能一个没动，改动集中在版面、层级、触摸目标与响应式四件事上。</p>
+  </div>
+
+  <div class="foot">
+    <span>宝哥提词器 · pages/index</span>
+    <span>2026-10-29</span>
+    <span>v1.0.0</span>
+  </div>
+
+</div>
+</body>
+</html>

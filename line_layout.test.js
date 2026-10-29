@@ -63,12 +63,10 @@ global.wx = {
       select(sel) { q._sel = sel; return q },
       boundingClientRect(cb) { q._cb = cb; return q },
       exec(done) {
-        // 模拟真实布局：.tp-lines 的高度 = 当前渲染切片各行高度之和
+        // 模拟真实布局：全量渲染后 .tp-lines 就是全文，高度 = 各行高度之和
         if (q._sel === '.tp-lines' && CUR && CUR._lineHs) {
-          const start = CUR.data.visibleStart || 0
-          const n = (CUR.data.visibleLines || []).length
           let h = 0
-          for (let i = start; i < start + n && i < CUR._lineHs.length; i++) h += CUR._lineHs[i]
+          for (let i = 0; i < CUR._lineHs.length; i++) h += CUR._lineHs[i]
           if (q._cb) q._cb({ height: h, width: 343, top: 0, bottom: h, left: 16, right: 359 })
         } else if (q._cb) {
           q._cb(null)
@@ -151,25 +149,26 @@ console.log('══════ 3. offset → 行号 二分定位 ════�
   ok('超出末尾钳制到最后一行', p._indexAtOffset(999999) === tops.length - 1)
 }
 
-/* ── 4. 虚拟列表切片定位（长稿不再整屏偏移） ── */
-console.log('══════ 4. 虚拟列表切片带 visibleTop ══════')
+/* ── 4. 全量渲染：滚动期间列表绝不重建 ── */
+console.log('══════ 4. 全量渲染（不再切片、不再换批）══════')
 {
   const body = Array.from({ length: 200 }, (_, i) => `林晚：这是第 ${i + 1} 句台词，用来撑出足够长的滚动距离。`)
   const p = fresh(body.join('\n'))
-  const lineH = p.data.lineHeightPx
-  ok('长稿已裁剪（不是全量渲染）', p.data.visibleLines.length < p.displayLines.length, `${p.data.visibleLines.length}/${p.displayLines.length}`)
+  ok('全量渲染：lines 就是全部台词', p.data.lines.length === p.displayLines.length,
+    `${p.data.lines.length}/${p.displayLines.length}`)
+  const ref = p.data.lines
   const target = Math.round(p.data.totalScroll * 0.5)
   p._seekPx(target)
   step(20)
-  const startTop = p._lineTops[p.data.visibleStart]
-  const sliceH = p._lineHs.slice(p.data.visibleStart, p.data.visibleStart + p.data.visibleLines.length).reduce((a, b) => a + b, 0)
-  ok('滚到中段后切片起点 > 0', p.data.visibleStart > 0, 'start=' + p.data.visibleStart)
-  ok('visibleTop 与切片起点一致', p.data.visibleTop === startTop, `${p.data.visibleTop} vs ${startTop}`)
-  // 视口 [offset, offset+winH] 必须被渲染切片覆盖，否则真机就是白屏
+  ok('滚到中段：列表引用没换（零重建）', p.data.lines === ref, '列表被重建了')
+  ok('不再有切片偏移（visibleStart/visibleTop 恒 0）',
+    p.data.visibleStart === 0 && p.data.visibleTop === 0,
+    `start=${p.data.visibleStart} top=${p.data.visibleTop}`)
+  // 视口 [offset, offset+winH] 必须落在渲染范围内
   const viewTop = target - (p.data.startPad || 0)
-  ok('切片覆盖视口顶部', p.data.visibleTop <= viewTop, `${p.data.visibleTop} <= ${viewTop}`)
-  ok('切片覆盖视口底部', p.data.visibleTop + sliceH >= viewTop + p.winHeight, `${p.data.visibleTop + sliceH} >= ${viewTop + p.winHeight}`)
-  ok('切片高度不超过 40 行', p.data.visibleLines.length <= Math.ceil(p.winHeight / lineH) + 25)
+  ok('渲染范围覆盖视口顶部', viewTop >= 0, `viewTop=${viewTop}`)
+  ok('渲染范围覆盖视口底部', p.data.textHeight >= viewTop + p.winHeight,
+    `textH=${p.data.textHeight} 需要 >= ${viewTop + p.winHeight}`)
 }
 
 /* ── 5. 长稿 totalScroll 用标定，不被切片截断 ── */

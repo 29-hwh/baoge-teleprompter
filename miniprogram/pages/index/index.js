@@ -12,6 +12,12 @@ Page({
     list: [],
     empty: false,
     storageTip: '',
+    // 焦点区：最近修改的一篇台本（首页「RECENT / 最近在改」卡）
+    // 只做展示，不改任何存储结构；数据来自已有的 updatedAt。
+    resume: null,
+    // 全库字数（顶栏画像用），格式化后的文本给模板直接渲染
+    totalChars: 0,
+    totalCharsText: '0',
     // 分区入口：all 全部 / split 拆分台本（Word 拆分导入生成的）/ single 单篇台本
     filter: 'all',
     // totalCount = 全部台本数（不受分区影响）：顶栏概况与「全部」chip 都用它
@@ -26,11 +32,56 @@ Page({
     // 页脚信息（底部固定展示，单一来源见 config.js）
     version: 'v' + config.APP_VERSION,
     footerCopyright: `© ${config.COPYRIGHT_YEAR} ${config.COPYRIGHT_OWNER}`,
-    footerUpdate: `更新于 ${config.BUILD_DATE}`
+    footerUpdate: `更新于 ${config.BUILD_DATE}`,
+    // ── 异形屏适配 ──
+    // 本页是 navigationStyle:custom，页面自己从 y=0 开始画，
+    // 所以必须自己躲开状态栏/刘海（顶部）与右上角微信胶囊。
+    // headTop = 状态栏高度 + 46px（胶囊带 32px + 上下各 7px 呼吸），
+    // 报头整体落在胶囊下方，既不钻刘海也不和「···⊙」打架。
+    headTop: 92,
+    // 横屏刘海机的左右安全区，交给 CSS 变量拼进内边距
+    safeL: 0,
+    safeR: 0
+  },
+
+  onLoad() {
+    this._syncViewport()
+    if (typeof wx.onWindowResize === 'function') {
+      this._onWinResize = () => this._syncViewport()
+      wx.onWindowResize(this._onWinResize)
+    }
+  },
+
+  onUnload() {
+    if (this._onWinResize && typeof wx.offWindowResize === 'function') {
+      wx.offWindowResize(this._onWinResize)
+    }
+  },
+
+  /**
+   * 读真实窗口信息算安全区。
+   * 不用 env(safe-area-inset-*)：安卓微信恒返回 0，只有 wx.getWindowInfo().safeArea 靠谱。
+   */
+  _syncViewport() {
+    let win = {}
+    try {
+      win = (typeof wx.getWindowInfo === 'function' && wx.getWindowInfo()) || wx.getSystemInfoSync() || {}
+    } catch (e) {
+      win = {}
+    }
+    const statusBar = typeof win.statusBarHeight === 'number' ? win.statusBarHeight : 20
+    const winW = win.windowWidth || 375
+    const safe = win.safeArea || null
+    const headTop = Math.round(statusBar + 46)
+    const safeL = safe ? Math.max(0, Math.round(safe.left || 0)) : 0
+    const safeR = safe ? Math.max(0, Math.round(winW - (safe.right || winW))) : 0
+    if (this.data.headTop === headTop && this.data.safeL === safeL && this.data.safeR === safeR) return
+    this.setData({ headTop: headTop, safeL: safeL, safeR: safeR })
   },
 
   onShow() {
     this._collapsed = new Set(wx.getStorageSync(COLLAPSED_KEY) || [])
+    this._syncViewport()
     this.loadList()
   },
 
@@ -64,6 +115,8 @@ Page({
         return mb - ma
       })
     const singles = raw.filter((s) => !s.folderId || !folderIds.has(s.folderId))
+    // 千分位：模板里不能调函数，格式化必须在 JS 侧算好（等宽数字排版才不抖）
+    const fmt = (n) => String(n || 0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 
     const cardOf = (s) => {
       const stats = parser.quickStats(s.content)
@@ -73,6 +126,7 @@ Page({
         title: s.title,
         preview: (s.content || '').replace(/\s+/g, ' ').slice(0, 40),
         chars: stats.chars,
+        charsText: fmt(stats.chars),
         roleCount: (s.roles || []).length,
         updatedText: util.fromNow(s.updatedAt)
       }
@@ -98,6 +152,11 @@ Page({
           .forEach((s) => list.push(Object.assign(cardOf(s), { inFolder: true })))
       }
     })
+    // 组与组之间需要一条「分节说明」：文件夹组最后一张卡和下面的单篇卡之间
+    // 原来只靠 14rpx 间距隔开，实机上会被误读成「单篇也属于上面这个文件夹」。
+    if (groups.length > 0 && singles.length > 0) {
+      list.push({ kind: 'section', id: 'sec-single', name: '单篇台本', count: singles.length })
+    }
     singles.forEach((s) => list.push(Object.assign(cardOf(s), { inFolder: false })))
 
     // 分区入口：全部 / 拆分台本（文件夹里拆出来的）/ 单篇台本
@@ -113,6 +172,14 @@ Page({
     }
 
     const sizeKb = Math.round(store.estimateSize() / 1024)
+
+    // 焦点卡：最近修改的一篇（跨文件夹、跨分区，始终指向「你上次动过的稿子」）
+    const newest = raw.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0]
+    const resume = newest ? cardOf(newest) : null
+
+    // 全库字数：只统计台本（文件夹是虚拟分组，不占字数）
+    const totalChars = list.reduce((sum, i) => sum + (i.kind === 'script' ? i.chars || 0 : 0), 0)
+
     this.setData({
       list: visible,
       empty: visible.length === 0,
@@ -120,6 +187,9 @@ Page({
       folderCount: folderCount,
       splitCount: splitParts.length,
       singleCount: singleCards.length,
+      resume: raw.length > 0 ? resume : null,
+      totalChars: totalChars,
+      totalCharsText: fmt(totalChars),
       storageTip: sizeKb > 2048 ? `本地已占用约 ${sizeKb}KB，建议清理不用的台本` : ''
     })
   },

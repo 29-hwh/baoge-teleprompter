@@ -69,10 +69,10 @@ console.log('════════ 1. 速度：改速后引擎 pxPerSecond �
   const p = fresh()
   const before = p.engine.pxPerSecond
   ok('引擎已初始化（pxPerSecond > 0）', before > 0, 'pxPerSecond=' + before)
-  p._applySliderRatio('vs-speed', 1.0) // 拉到最大 600cpm
+  p._applySliderRatio('vs-speed', 1.0) // 拉到最大 1500cpm
   const after = p.engine.pxPerSecond
   ok('改速后引擎 pxPerSecond 立即更新（非播放态）', after > before, `${before.toFixed(2)} → ${after.toFixed(2)}`)
-  ok('data.settings.speedCpm 已到最大值', p.data.settings.speedCpm === 600, 'speedCpm=' + p.data.settings.speedCpm)
+  ok('data.settings.speedCpm 已到最大值', p.data.settings.speedCpm === 1500, 'speedCpm=' + p.data.settings.speedCpm)
   // 播放验证：_play 前也应保持新速
   const beforePlay = p.engine.pxPerSecond
   p._play()
@@ -203,9 +203,12 @@ console.log('════════ 11. WXML 消费点静态核对 ═══�
   const fs = require('fs')
   const wxml = fs.readFileSync('./miniprogram/pages/teleprompter/teleprompter.wxml', 'utf8')
   ok('台词区绑定对齐 class', /tp-align-\{\{textAlign\}\}/.test(wxml))
-  // 2026-10-28：虚拟列表要补 visibleTop（切片在全文里的 y），margin 变成三段
-  ok('台词区绑定宽度 margin', /margin:\s*\{\{visibleTop\}\}px \{\{marginHorizontal\}\}px/.test(wxml))
-  ok('虚拟列表切片带 visibleTop 补偿', /visibleTop/.test(wxml))
+  // 2026-10-29：改成全量渲染后不再有切片偏移，margin 回到两段
+  ok('台词区绑定宽度 margin', /margin:\s*0 \{\{marginHorizontal\}\}px/.test(wxml))
+  // 台词循环必须直接吃 lines（唯一一份数据）；再出现 visibleLines 说明切片逻辑又回来了
+  ok('台词直接循环 lines（全量渲染，不再切片）',
+    /wx:for="\{\{lines\}\}"/.test(wxml) && !/wx:for="\{\{visibleLines\}\}"/.test(wxml))
+  ok('模板里没有切片补偿 visibleTop', !/visibleTop/.test(wxml))
   // 行盒不能再写死 height，否则折行时会和下一行叠在一起
   ok('台词行用 min-height（不写死 height）', /min-height:\s*' \+ lineHeightPx/.test(wxml) && !/style="height: \{\{lineHeightPx\}\}px/.test(wxml))
   // 滑块事件节点必须自带 data-slider，否则 e.currentTarget.id 是空的（2026-10-28 速度锁死真因）

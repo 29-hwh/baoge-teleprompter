@@ -252,6 +252,18 @@ function wxssToCss(src, baseWidth) {
     .replace(/(^|\n)\s*page\s*\{/g, '$1body{')
 }
 
+/**
+ * 视口宽度：真机上 rpx = 视口宽 / 750，所以预览也必须按同一个基准换算。
+ * 旧版把 375 写死，截 768 宽的平板图时 rpx 仍是 0.5px —— 元素按手机尺寸画、
+ * 百分比宽度按平板算，于是「卡片只占一半、右边大片空白」的假象。
+ * --w=768 让 rpx 真的变成 1.024px，截出来的才是真机观感。
+ */
+const VIEW_W = (() => {
+  const a = (process.argv.slice(2).find((x) => x.indexOf('--w=') === 0) || '').split('=')[1]
+  const v = Number(a)
+  return isFinite(v) && v >= 300 ? v : 375
+})()
+
 /* ==========================================================================
  * 五、页面数据：真的把页面跑起来，拿到真实 data
  * ======================================================================== */
@@ -288,12 +300,34 @@ function makeHarness(opts) {
   global.Date.now = () => T
 
   const mem = {}
-  const W = o.width || 375
+  const W = o.width || VIEW_W
   const H = o.height || 812
-  const win = { windowWidth: W, windowHeight: H, statusBarHeight: 44, pixelRatio: 3 }
+  // 刘海机（iPhone 14 Pro 一类）的窗口信息：状态栏 54、左右安全区 0、底部 34
+  // 只有 --notch 才模拟，默认给普通机，截图才不会被误读成 bug
+  // iPad / 平板状态栏只有 24px（无刘海、无底部 home 条）
+  const notch = o.notch
+  const statusBarHeight = notch ? 54 : W >= 600 ? 24 : 44
+  const win = {
+    windowWidth: W,
+    windowHeight: H,
+    statusBarHeight: statusBarHeight,
+    pixelRatio: 3,
+    safeArea: notch
+      ? { left: 0, right: W, top: statusBarHeight, bottom: H - 34, width: W, height: H - statusBarHeight - 34 }
+      : { left: 0, right: W, top: statusBarHeight, bottom: H, width: W, height: H - statusBarHeight }
+  }
   const wx = {
     getWindowInfo: () => Object.assign({}, win),
     getSystemInfoSync: () => Object.assign({}, win),
+    // 胶囊按钮：右上角 87×32，上边距状态栏 4px（微信官方实测值，各家 ROM 略有差异）
+    getMenuButtonBoundingClientRect: () => ({
+      width: 87,
+      height: 32,
+      top: statusBarHeight + 4,
+      bottom: statusBarHeight + 36,
+      right: W - 7,
+      left: W - 94
+    }),
     getStorageSync: (k) => mem[k],
     setStorageSync: (k, v) => {
       mem[k] = v
@@ -343,7 +377,6 @@ function makeHarness(opts) {
   global.wx = wx
   return { wx, mem, Win: win }
 }
-
 const SAMPLE = [
   '第一场 办公室 日',
   '',
@@ -391,6 +424,12 @@ function buildTeleprompter() {
   }
   inst.onLoad({ id: s.id })
   inst.onReady()
+  // --speed=1500：把速度调到指定值再截图（用来核对滑块顶端/刻度是否与新范围一致）
+  const speedArg = ARGS.find((a) => a.indexOf('--speed=') === 0)
+  if (speedArg) {
+    const v = Number(speedArg.split('=')[1])
+    if (isFinite(v)) inst._applySliderValue('vs-speed', v)
+  }
   if (has('--menu')) inst.onOpenMenu()
   if (has('--playing')) inst.onTapPlay()
   return inst
@@ -417,7 +456,8 @@ function buildSettings() {
   return inst
 }
 
-function buildIndex() {  const h = makeHarness({})
+function buildIndex() {
+  const h = makeHarness({ notch: has('--notch') })
   const prefsEngine = require(path.join(MP, 'engine/prefs.js'))
   const appMock = {
     globalData: { prefs: prefsEngine.load(), currentScript: null },
@@ -469,31 +509,40 @@ if (PAGE === 'teleprompter' && has('--palette')) page.data.colorPicker = 'all'
 const wxml = fs.readFileSync(path.join(pageDir, PAGE + '.wxml'), 'utf8')
 const wxss = fs.readFileSync(path.join(pageDir, PAGE + '.wxss'), 'utf8')
 
-const W = 375
+const W = VIEW_W
 const H = 812
 const appCss = fs.readFileSync(path.join(MP, 'app.wxss'), 'utf8')
 const body = render(wxml, page.data)
 
+// 视口宽度写进 body 自定义属性，截图脚本按它设 viewport，两边才不会打架
 const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
 ${wxssToCss(appCss, W)}
 ${wxssToCss(wxss, W)}
 html,body{margin:0;padding:0;background:${
-  PAGE === 'settings' ? '#000000' : '#000'
-};-webkit-font-smoothing:antialiased;}
+  PAGE === 'index' ? '#F2EDE2' : PAGE === 'settings' ? '#000000' : '#000'
+};-webkit-font-smoothing:antialiased;width:${W}px;}
 body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;${
-  PAGE === 'index' ? 'height:812px;overflow:hidden;' : ''
+  PAGE === 'index' ? '' : ''
 }}
 img{max-width:100%;}
+/*
+ * 关键保真：真机上 view/text/scroll-view 全被 app.wxss 设成 border-box，
+ * 但预览里它们变成了 div/span，那条选择器就匹配不上了。
+ * 少了这一行，带 padding 的卡片会按 content-box 多算出 padding 的宽度，
+ * 50% 的两列装不下就各自独占一行 —— 之前「平板右侧大片空白」就是这个假象。
+ */
+div,span,a,input,textarea{box-sizing:border-box;}
 </style></head>
-<body>${
-  PAGE === 'index'
-    ? `<div style="height:812px;overflow:hidden;position:relative">${body}</div>`
-    : body
-}</body></html>`
+<body>${body}</body></html>`
 
-const outFile = `/tmp/page_${PAGE}${has('--menu') ? '_menu' : ''}${has('--empty') ? '_empty' : ''}${has('--playing') ? '_playing' : ''}.html`
+const speedArg2 = ARGS.find((a) => a.indexOf('--speed=') === 0)
+const outFile = `/tmp/page_${PAGE}${has('--menu') ? '_menu' : ''}${has('--empty') ? '_empty' : ''}${
+  has('--playing') ? '_playing' : ''
+}${has('--notch') ? '_notch' : ''}${VIEW_W !== 375 ? '_w' + VIEW_W : ''}${
+  speedArg2 ? '_sp' + speedArg2.split('=')[1] : ''
+}.html`
 fs.writeFileSync(outFile, html, 'utf8')
 
 // 关键自检：模板里若一行台词都没渲染出来，这里立刻报出来

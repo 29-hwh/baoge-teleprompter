@@ -51,9 +51,9 @@ console.log('\n══════ 1. 全量 WXML 静态体检：循环变量必�
 console.log('\n══════ 2. 提词页台词循环：必须声明 line 为循环项 ══════')
 const wxml = fs.readFileSync(TP, 'utf8')
 {
-  // 2026-10-28 恢复逐帧内核后，台词循环由「全量 lines」改为「虚拟列表 visibleLines」，
-  // 角色名由独立胶囊改为内联 rolePrefix。断言同步跟进。
-  const loops = wxml.match(/wx:for="\{\{visibleLines\}\}"[^>]*>/g) || []
+  // 2026-10-29 去掉虚拟列表：台词循环回到「全量 lines」，滚动期间不再换批。
+  // 角色名仍是内联 rolePrefix（rolePrefix + body 同一行）。
+  const loops = wxml.match(/wx:for="\{\{lines\}\}"[^>]*>/g) || []
   ok('提词页有台词循环（≥1 处）', loops.length >= 1, `实际 ${loops.length} 处`)
   ok(
     '每处台词循环都声明了 wx:for-item="line"',

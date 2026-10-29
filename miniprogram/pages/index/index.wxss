@@ -1,305 +1,657 @@
 /* ==========================================================================
-   首页 · 我的台本
+   首页 · 台本库 —「片场稿纸 / Call Sheet」
    ──────────────────────────────────────────────────────────────────────────
-   目标：首屏就能看到「台本」，而不是被标题和按钮挤掉。
-   做法：顶栏压到两行文字 + 一个圆形设置钮；主操作双按钮吸顶；
-        分区横滑 chip；卡片信息三段式（标题 / 预览 / 统计 + 提词）。
+   设计定位
+     把首页做成一张「场记单」：暖纸、墨字、朱红一点、细线分隔、等宽数字。
+     理由：产品卖的是「台本」，纸是最原生的隐喻；竞品清一色深色科技风，
+     浅暖纸在户外强光下更可读，也更容易被记住。
+
+   五条纪律
+     1) 朱红只表示「能开拍的东西 / 这就是最新的」：
+        焦点卡书脊 + RECENT 标签 + 开始提词 + 卡片提词 + 当前页签下划线，就这五处；
+        分组标记、角色标签、版本号、页码一律中性色 —— 红一多就不红了；
+     2) 标题用衬线（Songti），数字用等宽（SF Mono），正文用无衬线；
+     3) 分隔用 1rpx 细线，不用阴影堆层次；
+     4) 圆角统一 4–6rpx（印刷品是方的，不是药丸）；
+     5) 动效只做「入场 340ms + 按压 180ms」，不做循环动画。
+
+   对比度（WCAG AA，实测）
+     墨 #191710 / 纸 #F2EDE2 = 15.36:1
+     正文 #4C463A / 卡 #FBF7EE = 8.75:1
+     次要 #6E6759 / 纸 = 4.80:1
+     朱红 #BF3B27 / 卡 = 5.07:1；白字 / 朱红 = 5.43:1
+
+   尺寸口径
+     手机端全用 rpx（跟着屏宽等比放大，这是小程序的正确姿势）；
+     宽屏断点里改用 px —— 平板/横屏下 rpx 会被放大 2 倍以上，
+     继续用 rpx 会让标题变成「大字报」，px 在 iPad/横屏上才是稳定物理尺寸。
    ========================================================================== */
 
-.idx {
-  min-height: 100vh;
-  padding: 0 32rpx calc(120rpx + env(safe-area-inset-bottom));
+page {
+  /* ── 纸与墨 ── */
+  --paper: #F2EDE2;
+  --card: #FBF7EE;
+  --card-2: #F6F1E5;
+  --ink: #191710;
+  --ink-2: #4C463A;
+  --ink-3: #6E6759;
+  --rule: #DCD4C3;
+  --rule-2: #C3B9A3;
+
+  /* ── 朱红 ── */
+  --red: #BF3B27;
+  --red-deep: #8E2B1B;
+  --red-wash: #EFDFD8;
+
+  /* ── 字体：衬线标题 / 等宽数字 ── */
+  --serif: 'Songti SC', 'Noto Serif CJK SC', 'Source Han Serif SC', 'STSong', serif;
+  --mono: 'SF Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+
+  background: var(--paper);
+  color: var(--ink);
 }
 
-/* ── 顶栏 ── */
+.idx {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  box-sizing: border-box;
+  /* 显式给纸色：不依赖 page 的背景，预览工具与真机表现一致 */
+  background: var(--paper);
+  /* 左右叠加横屏刘海安全区（style 里注入 --safe-l / --safe-r） */
+  padding-left: calc(40rpx + var(--safe-l, 0px));
+  padding-right: calc(40rpx + var(--safe-r, 0px));
+  padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+}
+
+/* ══════════════════════════════════════════════════════════════
+   一、报头
+   ══════════════════════════════════════════════════════════ */
 .idx-head {
+  flex: none;
+  /* padding-top 由 JS 按「状态栏 + 胶囊带」写进内联样式 */
+}
+
+.idx-kicker {
+  display: flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 20rpx;
+  letter-spacing: 2.6rpx;
+  line-height: 1;
+  color: var(--ink-3);
+}
+
+/* 印刷套准标：整页第一处朱红 */
+.idx-kicker-dot {
+  width: 9rpx;
+  height: 9rpx;
+  margin-right: 12rpx;
+  background: var(--ink-2);
+}
+
+.idx-masthead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20rpx 0 22rpx;
-}
-
-.idx-head-main {
-  flex: 1;
-  min-width: 0;
+  margin-top: 14rpx;
 }
 
 .idx-title {
-  font-size: 48rpx;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0.5rpx;
+  flex: 1;
+  min-width: 0;
+  font-family: var(--serif);
+  font-size: 64rpx;
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: 2rpx;
 }
 
-.idx-sub {
-  margin-top: 8rpx;
-  font-size: 24rpx;
-  color: var(--text-tertiary);
+.idx-figures {
+  display: flex;
+  align-items: baseline;
+  margin-top: 16rpx;
+  font-family: var(--mono);
+  font-size: 22rpx;
+  color: var(--ink-3);
 }
 
+.idx-num {
+  font-family: var(--mono);
+  color: var(--ink);
+  letter-spacing: 0.4rpx;
+}
+
+.idx-num--lg {
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.idx-fig-u {
+  margin-left: 4rpx;
+  font-size: 20rpx;
+  color: var(--ink-3);
+}
+
+.idx-fig-sep {
+  margin: 0 12rpx;
+  color: var(--rule-2);
+}
+
+/* 设置：三根滑杆（CSS 画，避免字符「⚙」在不同机型上大小不一） */
 .idx-gear {
   flex: none;
-  width: 72rpx;
-  height: 72rpx;
-  margin-left: 20rpx;
-  border-radius: 50%;
-  background: var(--bg-card);
-  border: 1rpx solid var(--border);
-  color: var(--text-secondary);
-  font-size: 34rpx;
-  line-height: 70rpx;
-  text-align: center;
-}
-
-/* ── 主操作：吸顶双按钮 ── */
-.idx-actions {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  display: flex;
-  gap: 18rpx;
-  padding: 12rpx 0 18rpx;
-  background: var(--bg);
-}
-
-.idx-act {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 92rpx;
-  border-radius: 20rpx;
-  font-size: 30rpx;
-  font-weight: 600;
-  color: var(--text);
-  background: var(--bg-card);
-  border: 1rpx solid var(--border-strong);
-}
-
-.idx-act--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #ffffff;
-}
-
-/* 图标用 CSS 画，避免字体差异导致「＋」大小不一 */
-.idx-act-ico {
-  position: relative;
-  width: 26rpx;
-  height: 26rpx;
-  margin-right: 12rpx;
-}
-
-.idx-act-ico--plus::before,
-.idx-act-ico--plus::after {
-  content: '';
-  position: absolute;
-  background: #ffffff;
-  border-radius: 2rpx;
-}
-
-.idx-act-ico--plus::before {
-  left: 0;
-  top: 50%;
-  width: 26rpx;
-  height: 3rpx;
-  margin-top: -1.5rpx;
-}
-
-.idx-act-ico--plus::after {
-  top: 0;
-  left: 50%;
-  width: 3rpx;
-  height: 26rpx;
-  margin-left: -1.5rpx;
-}
-
-.idx-act-ico--down::before {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 0;
-  width: 3rpx;
-  height: 17rpx;
-  margin-left: -1.5rpx;
-  background: var(--text);
-  border-radius: 2rpx;
-}
-
-.idx-act-ico--down::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 0;
-  height: 0;
-  transform: translateX(-50%);
-  border-left: 8rpx solid transparent;
-  border-right: 8rpx solid transparent;
-  border-top: 9rpx solid var(--text);
-}
-
-/* ── 分区 chip（横向 scroll-view 必须显式给高，否则会塌成 0）── */
-.idx-tabs {
-  white-space: nowrap;
-  height: 68rpx;
-  margin-bottom: 20rpx;
-}
-
-.idx-tab {
-  display: inline-flex;
-  align-items: center;
-  height: 68rpx;
-  padding: 0 28rpx;
-  margin-right: 14rpx;
-  border-radius: 999rpx;
-  font-size: 26rpx;
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: var(--bg-card);
-  border: 1rpx solid var(--border);
-}
-
-.idx-tab.on {
-  color: #ffffff;
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.idx-tab-n {
-  margin-left: 8rpx;
-  font-size: 22rpx;
-  opacity: 0.72;
-}
-
-.idx-tip {
-  background: rgba(255, 82, 82, 0.12);
-  color: var(--accent);
-  font-size: 24rpx;
-  padding: 16rpx 22rpx;
-  border-radius: 14rpx;
-  margin-bottom: 20rpx;
-}
-
-/* ── 空态：在剩余空间里垂直居中，避免首屏下方一大片空黑 ── */
-.idx-empty {
+  width: 76rpx;
+  height: 76rpx;
+  margin-left: 24rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: calc(100vh - 240rpx);
-  padding: 0 0 80rpx;
+  gap: 10rpx;
+  border: 1rpx solid var(--rule-2);
+  border-radius: 6rpx;
+  background: var(--card);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.idx-gear-line {
+  position: relative;
+  width: 32rpx;
+  height: 2rpx;
+  background: var(--ink-2);
+}
+
+.idx-gear-line::after {
+  content: '';
+  position: absolute;
+  top: -4rpx;
+  width: 10rpx;
+  height: 10rpx;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--card);
+  border: 2rpx solid var(--ink-2);
+}
+
+.idx-gear-line:nth-child(1)::after { left: 4rpx; }
+.idx-gear-line:nth-child(2)::after { left: 18rpx; }
+.idx-gear-line:nth-child(3)::after { left: 10rpx; }
+
+/* 报头下细线，左侧一小段朱红（套准标之二） */
+.idx-rule {
+  position: relative;
+  flex: none;
+  height: 1rpx;
+  margin-top: 22rpx;
+  background: var(--rule);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   二、主操作（跟随内容；不做吸顶：吸顶会撞微信胶囊，也会压住焦点卡）
+   ══════════════════════════════════════════════════════════ */
+.idx-actions {
+  flex: none;
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.idx-act {
+  flex: 1;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  letter-spacing: 0.5rpx;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.idx-act--solid {
+  flex: 1.15;
+  background: var(--ink);
+  border: 1rpx solid var(--ink);
+  color: #FBF7EE;
+}
+
+.idx-act--ghost {
+  background: transparent;
+  border: 1rpx solid var(--rule-2);
+  color: var(--ink);
+}
+
+/* 图标：纯 CSS 几何，线宽统一 2–3rpx */
+.idx-ico {
+  position: relative;
+  width: 24rpx;
+  height: 24rpx;
+  margin-right: 10rpx;
+}
+
+.idx-ico--plus::before,
+.idx-ico--plus::after {
+  content: '';
+  position: absolute;
+  background: #FBF7EE;
+  border-radius: 1rpx;
+}
+
+.idx-ico--plus::before {
+  left: 0;
+  top: 50%;
+  width: 24rpx;
+  height: 3rpx;
+  margin-top: -1.5rpx;
+}
+
+.idx-ico--plus::after {
+  top: 0;
+  left: 50%;
+  width: 3rpx;
+  height: 24rpx;
+  margin-left: -1.5rpx;
+}
+
+/* 描边版加号（列表收尾用，压在纸色上） */
+.idx-ico--plus-ink::before,
+.idx-ico--plus-ink::after {
+  background: var(--ink-3);
+}
+
+.idx-ico--down::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 2rpx;
+  width: 2rpx;
+  height: 12rpx;
+  margin-left: -1rpx;
+  background: var(--ink);
+}
+
+.idx-ico--down::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 6rpx;
+  width: 10rpx;
+  height: 10rpx;
+  margin-left: -5rpx;
+  border-right: 2rpx solid var(--ink);
+  border-bottom: 2rpx solid var(--ink);
+  transform: rotate(45deg);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   三、焦点卡「最近在改」
+   ══════════════════════════════════════════════════════════ */
+.idx-hero {
+  position: relative;
+  flex: none;
+  margin-top: 20rpx;
+  padding: 26rpx 28rpx 22rpx;
+  background: var(--card);
+  border: 1rpx solid var(--rule-2);
+  border-radius: 6rpx;
+  box-shadow: 0 2rpx 0 rgba(25, 23, 16, 0.04), 0 20rpx 44rpx -30rpx rgba(25, 23, 16, 0.45);
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* 左侧朱红书脊：整卡唯一的大色块，入场时从上往下「画」出来 */
+.idx-hero::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6rpx;
+  background: var(--red);
+  border-radius: 6rpx 0 0 6rpx;
+  transform-origin: top center;
+  animation: idx-spine 0.44s 0.14s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
+
+@keyframes idx-spine {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+.idx-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.idx-hero-tag {
+  display: flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 20rpx;
+  letter-spacing: 2.4rpx;
+  line-height: 1;
+  color: var(--red-deep);
+}
+
+.idx-hero-tag-dot {
+  width: 8rpx;
+  height: 8rpx;
+  margin-right: 10rpx;
+  border-radius: 50%;
+  background: var(--red);
+}
+
+.idx-hero-edit {
+  position: relative;
+  padding: 2rpx 2rpx 4rpx;
+  font-size: 23rpx;
+  line-height: 1.2;
+  color: var(--ink-3);
+  border-bottom: 1rpx solid var(--rule-2);
+}
+
+/* 视觉上只是一个小下划线文字，但点按区域要够手指用（约 44×40rpx），
+   否则紧邻整卡点击区，误触就变成「进编辑」而不是「进提词」 */
+.idx-hero-edit::before {
+  content: '';
+  position: absolute;
+  left: -18rpx;
+  right: -18rpx;
+  top: -16rpx;
+  bottom: -12rpx;
+}
+
+.idx-hero-title {
+  margin-top: 16rpx;
+  font-family: var(--serif);
+  font-size: 42rpx;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0.8rpx;
+}
+
+.idx-hero-pre {
+  margin-top: 10rpx;
+  font-size: 26rpx;
+  line-height: 1.62;
+  color: var(--ink-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.idx-hero-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid var(--rule);
+}
+
+.idx-hero-fig {
+  display: flex;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 22rpx;
+  color: var(--ink-3);
+}
+
+.idx-hero-sep {
+  margin: 0 10rpx;
+  color: var(--rule-2);
+}
+
+.idx-hero-play {
+  display: flex;
+  align-items: center;
+  height: 80rpx;
+  padding: 0 28rpx;
+  background: var(--red);
+  border-radius: 4rpx;
+  color: #FFF6F2;
+  font-size: 26rpx;
+  font-weight: 600;
+  letter-spacing: 1rpx;
+  box-shadow: 0 10rpx 20rpx -14rpx rgba(191, 59, 39, 0.95);
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+
+/* 统一的播放三角 */
+.idx-tri {
+  width: 0;
+  height: 0;
+  margin-right: 10rpx;
+  border-style: solid;
+  border-left-width: 12rpx;
+  border-left-color: #FFF6F2;
+  border-top: 7rpx solid transparent;
+  border-bottom: 7rpx solid transparent;
+}
+
+.idx-tri--sm {
+  margin-right: 8rpx;
+  border-left-width: 10rpx;
+  border-left-color: var(--red);
+  border-top-width: 6rpx;
+  border-bottom-width: 6rpx;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   四、分区页签（文字 + 下划线）
+   ══════════════════════════════════════════════════════════ */
+.idx-tabs {
+  flex: none;
+  height: 76rpx;
+  margin-top: 26rpx;
+  white-space: nowrap;
+}
+
+.idx-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  height: 76rpx;
+  padding-top: 20rpx;
+  margin-right: 44rpx;
+  font-size: 28rpx;
+  color: var(--ink-3);
+}
+
+.idx-tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8rpx;
+  height: 3rpx;
+  background: var(--red);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.idx-tab.on {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.idx-tab.on::after {
+  transform: scaleX(1);
+}
+
+.idx-tab-n {
+  margin-left: 12rpx;
+  font-family: var(--mono);
+  font-size: 22rpx;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+/* 存储提示 */
+.idx-tip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  margin: 4rpx 0 16rpx;
+  padding: 16rpx 18rpx;
+  background: var(--red-wash);
+  border-radius: 4rpx;
+  font-size: 23rpx;
+  color: var(--red-deep);
+}
+
+.idx-tip-bar {
+  flex: none;
+  width: 4rpx;
+  height: 24rpx;
+  margin-right: 12rpx;
+  background: var(--red);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   五、空态：一张打格稿纸
+   ══════════════════════════════════════════════════════════ */
+.idx-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24rpx 0 56rpx;
   text-align: center;
 }
 
-.idx-empty-mark {
-  width: 132rpx;
-  margin: 0 auto 34rpx;
-  padding: 26rpx 22rpx;
-  background: var(--bg-card);
-  border: 1rpx solid var(--border);
-  border-radius: 20rpx;
+.idx-sheet {
+  position: relative;
+  width: 236rpx;
+  height: 168rpx;
+  margin-bottom: 40rpx;
+  background-color: var(--card);
+  border: 1rpx solid var(--rule-2);
+  border-radius: 2rpx;
+  transform: rotate(-2.4deg);
+  box-shadow: 10rpx 10rpx 0 -2rpx rgba(25, 23, 16, 0.05), 0 22rpx 36rpx -26rpx rgba(25, 23, 16, 0.55);
+  animation: idx-drop 0.5s 0.06s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
 }
 
-.idx-empty-line {
-  height: 10rpx;
-  border-radius: 999rpx;
-  background: var(--bg-elevated);
-  margin-bottom: 12rpx;
+@keyframes idx-drop {
+  from {
+    opacity: 0;
+    transform: rotate(-8deg) translateY(-14rpx);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-2.4deg) translateY(0);
+  }
 }
 
-.idx-empty-line:last-child {
-  margin-bottom: 0;
+/* 稿纸上的三条「还没写字」的横线 */
+.idx-sheet-row {
+  position: absolute;
+  left: 64rpx;
+  right: 26rpx;
+  height: 1rpx;
+  background: var(--rule);
 }
 
-.idx-empty-line--short {
-  width: 60%;
+.idx-sheet-row:nth-child(2) { top: 44rpx; }
+.idx-sheet-row:nth-child(3) { top: 82rpx; }
+.idx-sheet-row:nth-child(4) { top: 120rpx; }
+
+.idx-sheet-red {
+  position: absolute;
+  left: 50rpx;
+  top: 0;
+  bottom: 0;
+  width: 1rpx;
+  background: rgba(191, 59, 39, 0.45);
 }
 
 .idx-empty-title {
-  font-size: 32rpx;
+  font-family: var(--serif);
+  font-size: 40rpx;
   font-weight: 600;
-  margin-bottom: 12rpx;
+  letter-spacing: 0.6rpx;
 }
 
 .idx-empty-sub {
-  width: 100%;
+  margin-top: 12rpx;
+  padding: 0 30rpx;
   font-size: 25rpx;
-  color: var(--text-tertiary);
-  line-height: 1.6;
-  padding: 0 40rpx;
+  line-height: 1.7;
+  color: var(--ink-3);
 }
 
 .idx-empty-acts {
-  width: 100%;
   display: flex;
-  gap: 18rpx;
+  gap: 16rpx;
+  width: 100%;
+  max-width: 520rpx;
   margin-top: 40rpx;
-  padding: 0 20rpx;
 }
 
 .idx-empty-btn {
   flex: 1;
-  height: 84rpx;
-  line-height: 82rpx;
+  height: 88rpx;
+  line-height: 86rpx;
   text-align: center;
-  border-radius: 18rpx;
-  font-size: 28rpx;
-  font-weight: 500;
-  color: var(--text);
-  background: var(--bg-card);
-  border: 1rpx solid var(--border-strong);
+  border: 1rpx solid var(--rule-2);
+  border-radius: 6rpx;
+  font-size: 27rpx;
+  font-weight: 600;
+  color: var(--ink);
+  transition: transform 0.18s ease, background 0.18s ease;
 }
 
-.idx-empty-btn--primary {
-  color: #ffffff;
-  background: var(--accent);
-  border-color: var(--accent);
+.idx-empty-btn--solid {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #FBF7EE;
 }
 
-/* ── 列表 ── */
+/* ══════════════════════════════════════════════════════════════
+   六、列表：文件夹=分节线，台本=稿纸卡
+   ══════════════════════════════════════════════════════════ */
 .idx-list {
-  padding-bottom: 10rpx;
-}
-
-/* ── 文件夹 ── */
-.idx-folder {
-  display: flex;
-  align-items: stretch;
-  margin: 26rpx 0 14rpx;
-  border-radius: 20rpx;
-  background: var(--bg-card);
-  border: 1rpx solid var(--border);
-  overflow: hidden;
-}
-
-.idx-folder-bar {
   flex: none;
-  width: 8rpx;
-  background: var(--accent);
 }
 
-.idx-folder.is-collapsed .idx-folder-bar {
-  background: var(--border-strong);
+.idx-folder {
+  margin: 34rpx 0 16rpx;
+  padding: 16rpx 0 10rpx;
+  border-top: 1rpx solid var(--rule-2);
+  transition: background 0.18s ease;
 }
 
-.idx-folder-main {
-  flex: 1;
-  min-width: 0;
-  padding: 22rpx 24rpx;
-}
-
-.idx-folder-row {
+.idx-folder-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+}
+
+.idx-folder-tick {
+  flex: none;
+  width: 10rpx;
+  height: 10rpx;
+  margin-right: 14rpx;
+  background: var(--ink);
+}
+
+.idx-folder.is-collapsed .idx-folder-tick {
+  background: var(--rule-2);
 }
 
 .idx-folder-name {
   flex: 1;
   min-width: 0;
-  font-size: 30rpx;
+  font-family: var(--serif);
+  font-size: 33rpx;
   font-weight: 600;
+  letter-spacing: 0.5rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -313,25 +665,38 @@
 }
 
 .idx-folder-count {
-  font-size: 23rpx;
-  color: var(--text-secondary);
-  background: var(--bg-elevated);
-  padding: 4rpx 16rpx;
-  border-radius: 999rpx;
+  font-family: var(--mono);
+  font-size: 20rpx;
+  color: var(--ink-3);
+  padding: 3rpx 10rpx;
+  border: 1rpx solid var(--rule-2);
+  border-radius: 2rpx;
 }
 
 .idx-folder-arrow {
-  width: 14rpx;
-  height: 14rpx;
+  position: relative;
+  width: 12rpx;
+  height: 12rpx;
   margin-left: 18rpx;
   margin-top: -6rpx;
-  border-right: 3rpx solid var(--text-secondary);
-  border-bottom: 3rpx solid var(--text-secondary);
+  border-right: 2rpx solid var(--ink-2);
+  border-bottom: 2rpx solid var(--ink-2);
   transform: rotate(45deg);
+  transition: transform 0.2s ease;
+}
+
+/* 6px 的箭头本身点不中，展开热区扩到 ~52×44rpx（catchtap 打在箭头上，不误触改名） */
+.idx-folder-arrow::before {
+  content: '';
+  position: absolute;
+  left: -20rpx;
+  right: -20rpx;
+  top: -16rpx;
+  bottom: -16rpx;
 }
 
 .idx-folder-arrow.is-folded {
-  margin-top: 0;
+  margin-top: 2rpx;
   transform: rotate(-45deg);
 }
 
@@ -339,117 +704,201 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 12rpx;
-  font-size: 22rpx;
-  color: var(--text-tertiary);
+  margin-top: 8rpx;
+  padding-left: 24rpx;
+  font-family: var(--mono);
+  font-size: 20rpx;
+  color: var(--ink-3);
 }
 
 .idx-folder-hint {
   margin-left: 16rpx;
-  flex: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+  font-size: 20rpx;
+  color: var(--ink-3);
 }
 
-/* ── 台本卡 ── */
+/* 分节说明：比文件夹轻一档 —— 没有名字可改，只是一条「以下换类了」的界线 */
+.idx-sec {
+  display: flex;
+  align-items: center;
+  margin: 34rpx 0 16rpx;
+}
+
+.idx-sec-name {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 20rpx;
+  letter-spacing: 2rpx;
+  color: var(--ink-3);
+}
+
+.idx-sec-line {
+  flex: 1;
+  height: 1rpx;
+  margin: 0 14rpx;
+  background: var(--rule);
+}
+
+.idx-sec-n {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 20rpx;
+  color: var(--ink-3);
+}
+
+/* 台本卡 */
 .idx-card {
-  margin-bottom: 18rpx;
-  padding: 26rpx 28rpx 20rpx;
-  border-radius: 20rpx;
-  background: var(--bg-card);
-  border: 1rpx solid var(--border);
+  position: relative;
+  margin-bottom: 20rpx;
+  padding: 24rpx 26rpx 18rpx;
+  background: var(--card);
+  border: 1rpx solid var(--rule);
+  border-radius: 6rpx;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
 .idx-card.in-folder {
-  margin-left: 24rpx;
-  border-left: 4rpx solid rgba(255, 82, 82, 0.5);
+  margin-left: 20rpx;
+  border-left: 3rpx solid rgba(191, 59, 39, 0.45);
 }
 
-.idx-card-top {
+.idx-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10rpx;
 }
 
 .idx-card-title {
   flex: 1;
   min-width: 0;
-  font-size: 32rpx;
+  font-family: var(--serif);
+  font-size: 33rpx;
   font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.4rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.idx-chip-role {
+.idx-chip {
   flex: none;
-  margin-left: 16rpx;
-  font-size: 22rpx;
-  color: var(--accent);
-  background: rgba(255, 82, 82, 0.14);
-  padding: 4rpx 14rpx;
-  border-radius: 999rpx;
+  margin-left: 14rpx;
+  padding: 3rpx 10rpx;
+  font-family: var(--mono);
+  font-size: 19rpx;
+  color: var(--ink-3);
+  background: var(--card-2);
+  border: 1rpx solid var(--rule);
+  border-radius: 2rpx;
 }
 
-.idx-card-preview {
+.idx-card-pre {
+  margin-top: 10rpx;
   font-size: 26rpx;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin-bottom: 16rpx;
+  line-height: 1.6;
+  color: var(--ink-2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-.idx-card-meta {
+.idx-card-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-top: 20rpx;
   padding-top: 14rpx;
-  border-top: 1rpx solid var(--border);
+  border-top: 1rpx solid var(--rule);
 }
 
-.idx-card-stats {
+.idx-card-fig {
   display: flex;
-  align-items: center;
-  font-size: 22rpx;
-  color: var(--text-tertiary);
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 21rpx;
+  color: var(--ink-3);
 }
 
-.idx-dot {
+.idx-card-dot {
   margin: 0 8rpx;
+  color: var(--rule-2);
 }
 
-/* 「提词」药丸：一步直达提词页 */
 .idx-play {
   display: flex;
   align-items: center;
-  height: 54rpx;
+  height: 76rpx;
   padding: 0 22rpx;
-  border-radius: 999rpx;
-  border: 1rpx solid rgba(255, 82, 82, 0.55);
-  color: var(--accent);
+  border: 1rpx solid rgba(191, 59, 39, 0.82);
+  border-radius: 3rpx;
+  color: var(--red);
   font-size: 24rpx;
   font-weight: 600;
+  letter-spacing: 0.5rpx;
+  transition: transform 0.16s ease, background 0.16s ease;
 }
 
-.idx-play-ico {
-  width: 0;
-  height: 0;
-  margin-right: 10rpx;
-  border-left: 13rpx solid var(--accent);
-  border-top: 8rpx solid transparent;
-  border-bottom: 8rpx solid transparent;
+/* 列表收尾：虚线框的「再新建一篇」，滚到底也不用滑回顶部 */
+.idx-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  margin-top: 10rpx;
+  border: 1rpx dashed var(--rule-2);
+  border-radius: 6rpx;
+  font-size: 25rpx;
+  color: var(--ink-3);
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.idx-more:active {
+  border-color: var(--ink-3);
 }
 
 .idx-list-foot {
-  padding: 26rpx 0 10rpx;
+  padding: 26rpx 0 8rpx;
   text-align: center;
-  font-size: 22rpx;
-  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: 19rpx;
+  letter-spacing: 0.4rpx;
+  color: var(--ink-3);
 }
 
-/* ── 文件夹重命名弹窗 ── */
+/* ══════════════════════════════════════════════════════════════
+   七、按压反馈（hover-class）
+   ══════════════════════════════════════════════════════════ */
+.press {
+  transform: scale(0.988);
+  background: var(--card-2);
+  border-color: var(--rule-2);
+}
+
+.press-ink {
+  opacity: 0.86;
+  transform: scale(0.99);
+}
+
+.press-soft {
+  background: var(--card-2);
+}
+
+.press-play {
+  transform: scale(0.95);
+  background: var(--red-wash);
+}
+
+.press-text {
+  color: var(--red-deep);
+  border-bottom-color: var(--red);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   八、弹窗
+   ══════════════════════════════════════════════════════════ */
 .idx-mask {
   position: fixed;
   left: 0;
@@ -460,94 +909,322 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(25, 23, 16, 0.45);
 }
 
 .idx-dialog {
   width: 600rpx;
-  padding: 36rpx 32rpx 26rpx;
-  border-radius: 24rpx;
-  background: var(--bg-elevated);
+  padding: 30rpx 30rpx 26rpx;
+  background: var(--card);
+  border: 1rpx solid var(--rule-2);
+  border-radius: 6rpx;
+  box-shadow: 0 40rpx 80rpx -40rpx rgba(0, 0, 0, 0.55);
+}
+
+.idx-dialog-kicker {
+  font-family: var(--mono);
+  font-size: 18rpx;
+  letter-spacing: 3rpx;
+  color: var(--red);
 }
 
 .idx-dialog-title {
-  margin-bottom: 24rpx;
-  text-align: center;
-  font-size: 32rpx;
-  font-weight: 700;
+  margin-top: 6rpx;
+  font-family: var(--serif);
+  font-size: 36rpx;
+  font-weight: 600;
+  letter-spacing: 0.6rpx;
 }
 
 .idx-dialog-input {
   width: 100%;
-  padding: 18rpx 22rpx;
-  margin-bottom: 30rpx;
-  border-radius: 14rpx;
-  background: var(--bg-card);
-  border: 1rpx solid var(--border);
+  margin-top: 22rpx;
+  padding: 16rpx 2rpx 14rpx;
+  background: transparent;
+  border-bottom: 1rpx solid var(--ink-2);
   font-size: 30rpx;
-  /* 原生输入框不继承 var()，显式给白字，避免深底黑字看不见 */
-  color: #ffffff;
+  /* 原生输入框不继承 var()，显式给墨色 */
+  color: #191710;
 }
 
 .idx-ph {
-  color: #636366;
+  color: #6E6759;
 }
 
 .idx-dialog-btns {
   display: flex;
-  gap: 20rpx;
+  gap: 16rpx;
+  margin-top: 32rpx;
 }
 
 .idx-dialog-btn {
   flex: 1;
-  height: 80rpx;
-  line-height: 78rpx;
+  height: 84rpx;
+  line-height: 82rpx;
   text-align: center;
-  border-radius: 16rpx;
-  font-size: 28rpx;
-  color: var(--text);
-  background: var(--bg-card);
-  border: 1rpx solid var(--border-strong);
+  border: 1rpx solid var(--rule-2);
+  border-radius: 4rpx;
+  font-size: 27rpx;
+  color: var(--ink);
+  transition: transform 0.18s ease, background 0.18s ease;
 }
 
-.idx-dialog-btn--primary {
-  color: #ffffff;
-  background: var(--accent);
-  border-color: var(--accent);
+.idx-dialog-btn--solid {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #FBF7EE;
 }
 
-/* ── 页脚：常驻，压成一行 ── */
+/* ══════════════════════════════════════════════════════════════
+   九、版权页（跟随内容；不悬浮 —— 悬浮版会永久压住列表最后一屏）
+   ══════════════════════════════════════════════════════════ */
 .idx-foot {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 50;
+  flex: none;
+  margin-top: auto;
+  padding-top: 40rpx;
+}
+
+.idx-foot-line {
+  height: 1rpx;
+  background: var(--rule);
+}
+
+.idx-foot-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 72rpx;
-  /* 72rpx 是内容高度，安全区另算，避免被 border-box 吃掉导致文字贴边 */
-  box-sizing: content-box;
-  padding-bottom: env(safe-area-inset-bottom);
-  background: rgba(0, 0, 0, 0.92);
-  border-top: 1rpx solid var(--border);
-  font-size: 21rpx;
-  color: var(--text-tertiary);
+  padding: 20rpx 0 6rpx;
+  font-family: var(--mono);
+  font-size: 19rpx;
+  color: var(--ink-3);
 }
 
 .idx-foot-ver {
-  font-size: 21rpx;
+  color: var(--ink-2);
   font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 0.4rpx;
+  letter-spacing: 0.6rpx;
 }
 
 .idx-foot-sep {
   margin: 0 10rpx;
-  color: var(--border-strong);
+  color: var(--rule-2);
 }
 
-.idx-foot-txt {
-  color: var(--text-tertiary);
+/* ══════════════════════════════════════════════════════════════
+   十、入场动效（只做一次，不循环）
+   ══════════════════════════════════════════════════════════ */
+@keyframes idx-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16rpx);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* backwards：动画结束后释放属性，不与按压/悬停的 transform 打架 */
+.idx-hero,
+.idx-tabs,
+.idx-card,
+.idx-folder,
+.idx-actions {
+  animation: idx-rise 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
+
+.idx-actions { animation-delay: 0.02s; }
+.idx-hero { animation-delay: 0.06s; }
+.idx-list > view:nth-child(1) { animation-delay: 0.04s; }
+.idx-list > view:nth-child(2) { animation-delay: 0.07s; }
+.idx-list > view:nth-child(3) { animation-delay: 0.1s; }
+.idx-list > view:nth-child(4) { animation-delay: 0.13s; }
+.idx-list > view:nth-child(5) { animation-delay: 0.16s; }
+.idx-list > view:nth-child(6) { animation-delay: 0.19s; }
+.idx-list > view:nth-child(n + 7) { animation-delay: 0.22s; }
+
+/* ══════════════════════════════════════════════════════════════
+   十一、响应式
+   ══════════════════════════════════════════════════════════ */
+
+/* ── 平板 / 折叠屏展开 / 手机横屏：断点内改用 px ──
+   rpx 在 768px 屏上是 1.02px、在 1024px 屏上是 1.37px，
+   同一个 64rpx 标题会从 32px 涨到 87px。px 才是稳定的物理尺寸。 */
+@media (min-width: 600px) {
+  .idx {
+    max-width: 860px;
+    margin: 0 auto;
+    padding-left: calc(32px + var(--safe-l, 0px));
+    padding-right: calc(32px + var(--safe-r, 0px));
+    padding-bottom: 20px;
+  }
+
+  .idx-kicker { font-size: 11px; letter-spacing: 1.6px; }
+  .idx-masthead { margin-top: 10px; }
+  .idx-title { font-size: 40px; letter-spacing: 3px; }
+  .idx-gear { width: 46px; height: 46px; gap: 5px; border-radius: 4px; }
+  .idx-gear-line { width: 20px; height: 1px; }
+  .idx-gear-line::after { top: -2.5px; width: 6px; height: 6px; border-width: 1.5px; }
+  .idx-gear-line:nth-child(1)::after { left: 2px; }
+  .idx-gear-line:nth-child(2)::after { left: 11px; }
+  .idx-gear-line:nth-child(3)::after { left: 6px; }
+
+  .idx-figures { margin-top: 12px; font-size: 13px; }
+  .idx-num--lg { font-size: 17px; }
+  .idx-fig-u { font-size: 12px; }
+  .idx-fig-sep { margin: 0 8px; }
+  .idx-rule { margin-top: 18px; }
+
+  .idx-actions { margin-top: 18px; gap: 10px; max-width: 520px; }
+  .idx-act { height: 52px; font-size: 15px; border-radius: 4px; }
+  .idx-ico { width: 14px; height: 14px; margin-right: 7px; }
+  .idx-ico--plus::before { width: 14px; height: 2px; margin-top: -1px; }
+  .idx-ico--plus::after { width: 2px; height: 14px; margin-left: -1px; }
+  .idx-ico--down::before { top: 1px; width: 1.5px; height: 7px; margin-left: -0.75px; }
+  .idx-ico--down::after {
+    top: 3px; width: 6px; height: 6px; margin-left: -3px;
+    border-right-width: 1.5px; border-bottom-width: 1.5px;
+  }
+
+  .idx-hero { margin-top: 18px; padding: 18px 20px 16px; border-radius: 4px; }
+  .idx-hero::before { width: 4px; }
+  .idx-hero-tag { font-size: 11px; letter-spacing: 1.6px; }
+  .idx-hero-tag-dot { width: 6px; height: 6px; margin-right: 6px; }
+  .idx-hero-edit { font-size: 13px; }
+  .idx-hero-title { margin-top: 12px; font-size: 26px; line-height: 1.28; }
+  .idx-hero-pre { margin-top: 8px; font-size: 15px; line-height: 1.6; max-width: 640px; }
+  .idx-hero-foot { margin-top: 16px; padding-top: 12px; }
+  .idx-hero-fig { font-size: 13px; }
+  .idx-hero-sep { margin: 0 7px; }
+  .idx-hero-play { height: 44px; padding: 0 18px; font-size: 15px; border-radius: 3px; }
+  .idx-tri { margin-right: 7px; border-left-width: 8px; border-top-width: 5px; border-bottom-width: 5px; }
+  .idx-tri--sm { margin-right: 5px; border-left-width: 7px; border-top-width: 4px; border-bottom-width: 4px; }
+
+  .idx-tabs { height: 46px; margin-top: 16px; }
+  .idx-tab { height: 46px; padding-top: 11px; margin-right: 26px; font-size: 15px; }
+  .idx-tab::after { height: 2px; bottom: 6px; }
+  .idx-tab-n { margin-left: 5px; font-size: 11px; }
+
+  /* 两列：文件夹整行当分隔带，台本卡对半 */
+  .idx-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 14px;
+  }
+
+  .idx-folder { width: 100%; margin: 22px 0 10px; padding: 10px 0 7px; }
+  .idx-folder-tick { width: 8px; height: 8px; margin-right: 8px; }
+  .idx-folder-name { font-size: 20px; }
+  .idx-folder-count { font-size: 11px; padding: 2px 6px; }
+  .idx-folder-arrow { width: 7px; height: 7px; margin-left: 12px; border-width: 1.5px; }
+  .idx-folder-meta { margin-top: 5px; padding-left: 16px; font-size: 11px; }
+  .idx-folder-hint { font-size: 11px; }
+
+  .idx-sec { width: 100%; margin: 22px 0 10px; }
+  .idx-sec-name { font-size: 11px; letter-spacing: 1.4px; }
+  .idx-sec-line { margin: 0 10px; }
+  .idx-sec-n { font-size: 11px; }
+
+  .idx-card { width: calc(50% - 7px); margin-bottom: 10px; padding: 15px 16px 12px; border-radius: 4px; }
+  .idx-card.in-folder { margin-left: 0; border-left-width: 2px; }
+  .idx-card-title { font-size: 19px; }
+  .idx-chip { margin-left: 10px; padding: 2px 6px; font-size: 10px; }
+  .idx-card-pre { margin-top: 6px; font-size: 14px; line-height: 1.55; }
+  .idx-card-foot { margin-top: 11px; padding-top: 9px; }
+  .idx-card-fig { font-size: 11px; }
+  .idx-play { height: 40px; padding: 0 13px; font-size: 13px; }
+
+  .idx-more { width: 100%; height: 52px; margin-top: 8px; font-size: 14px; border-radius: 4px; }
+  .idx-list-foot { width: 100%; padding: 14px 0 6px; font-size: 11px; }
+
+  .idx-empty { padding: 30px 0 40px; }
+  .idx-sheet { width: 148px; height: 106px; margin-bottom: 26px; }
+  .idx-sheet-row { left: 40px; right: 16px; }
+  .idx-sheet-row:nth-child(2) { top: 28px; }
+  .idx-sheet-row:nth-child(3) { top: 52px; }
+  .idx-sheet-row:nth-child(4) { top: 76px; }
+  .idx-sheet-red { left: 31px; }
+  .idx-empty-title { font-size: 24px; }
+  .idx-empty-sub { margin-top: 8px; font-size: 14px; }
+  .idx-empty-acts { max-width: 400px; margin-top: 26px; gap: 10px; }
+  .idx-empty-btn { height: 52px; line-height: 50px; font-size: 15px; border-radius: 4px; }
+
+  .idx-foot { padding-top: 26px; }
+  .idx-foot-row { padding: 13px 0 4px; font-size: 11px; }
+  .idx-foot-sep { margin: 0 7px; }
+
+  .idx-dialog { width: 380px; padding: 20px 20px 18px; border-radius: 4px; }
+  .idx-dialog-kicker { font-size: 11px; }
+  .idx-dialog-title { font-size: 22px; }
+  .idx-dialog-input { margin-top: 14px; font-size: 18px; }
+  .idx-dialog-btns { margin-top: 20px; gap: 10px; }
+  .idx-dialog-btn { height: 50px; line-height: 48px; font-size: 15px; }
+}
+
+/* 超宽（iPad 横屏 1024+）：两列会拉得太长，改三列 + 收窄正文行宽 */
+@media (min-width: 1000px) {
+  .idx { max-width: 980px; }
+
+  .idx-card { width: calc(33.333% - 9.34px); }
+  .idx-hero-pre { max-width: 720px; }
+}
+
+/* 小屏（iPhone SE 一类）：缩小报头与内边距，保证首屏仍能看到焦点卡 */
+@media (max-width: 340px) {
+  .idx {
+    padding-left: calc(28rpx + var(--safe-l, 0px));
+    padding-right: calc(28rpx + var(--safe-r, 0px));
+  }
+
+  .idx-title {
+    font-size: 56rpx;
+  }
+
+  .idx-hero-title {
+    font-size: 38rpx;
+  }
+
+  .idx-act {
+    height: 82rpx;
+    font-size: 26rpx;
+  }
+
+  .idx-tab {
+    margin-right: 32rpx;
+  }
+
+  .idx-card.in-folder {
+    margin-left: 14rpx;
+  }
+
+  .idx-hero-play {
+    height: 76rpx;
+    padding: 0 22rpx;
+    font-size: 25rpx;
+  }
+}
+
+/* 减弱动效：系统开了「减少动态效果」就不做入场与过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .idx-hero,
+  .idx-tabs,
+  .idx-card,
+  .idx-folder,
+  .idx-actions,
+  .idx-sheet,
+  .idx-hero::before {
+    animation: none;
+  }
+
+  .idx-card,
+  .idx-gear,
+  .idx-play,
+  .idx-act,
+  .idx-more,
+  .idx-empty-btn,
+  .idx-dialog-btn,
+  .idx-folder-arrow,
+  .idx-tab::after {
+    transition: none;
+  }
 }

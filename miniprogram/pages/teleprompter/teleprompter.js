@@ -36,6 +36,19 @@ const HSLIDER_KEYS = ['hs-contentWidth', 'hs-countdown']
 /** 布局节流：拖动字号时不必每 16ms 重新分词排版 */
 const LAYOUT_THROTTLE_MS = 90
 
+/**
+ * 全量渲染阈值（行）。
+ *
+ * 2026-10-29：彻底去掉虚拟列表的「边滚边换批」。
+ * 换批那一帧要销毁/新建几十个节点，必然掉一帧 —— 观感就是宝哥说的
+ * 「滚动过程中间歇性跳一下」。改成一屏台词一次性渲染完，滚动期间
+ * **只有 transform 在变**，一个节点都不重建，这才可能真正连续。
+ *
+ * 超过这个行数才降级成「一整块纯文本」（1 个节点，内容一字不丢），
+ * 避免 800+ 行时首屏 setData 过大。
+ */
+const BLOB_LINES = 1200
+
 function pct(v, min, max) {
   if (!(max > min)) return 0
   const n = (Number(v) - min) / (max - min)
@@ -56,10 +69,10 @@ Page({
     hasNextScript: false,
 
     // ── 排版 ──
-    lines: [], // 全量台词（保留供测试/旧调用方读）
-    visibleLines: [], // 虚拟列表裁剪后的可见窗口（渲染用它）
-    visibleStart: 0,
-    visibleTop: 0, // 可见窗口在整篇文本坐标系里的顶部 y（切片定位用）
+    lines: [], // 全量台词（渲染用它，也是唯一一份）
+    visibleLines: [], // 已废弃：全量渲染后不再下发，字段保留避免旧调用方报错
+    visibleStart: 0, // 兼容字段（全量渲染后恒为 0）
+    visibleTop: 0, // 兼容字段（全量渲染后恒为 0）
     fontSizePx: 45,
     lineHeightPx: 81,
     letterSpacing: 0,
@@ -125,7 +138,7 @@ Page({
     speedUnitText: '字/分',
     speed: 200,
     speedMin: 10,
-    speedMax: 600,
+    speedMax: 1500, // 与 timeline.CPM_MAX 同步（真实值由 _parseAndLayout/_setSetting 覆盖）
     loop: false,
     countdown: 0,
     showClocks: true,
@@ -184,6 +197,8 @@ Page({
     this._wasPlayingBeforeMenu = false
     // 滚动内核：逐帧推进的真值，见 engine/scroll.js
     this._frameCount = 0
+    // 上一帧真正发出去的 offset（亚像素过滤用）。跳转/重播时置 -1 强制重绘一次。
+    this._lastOffsetSent = -1
     this._lastPct = -1
     this._wrapped = false
     this._lastSection = -1
@@ -197,7 +212,7 @@ Page({
     this.winHeight = win.windowHeight || 667
     this._safeLeft = undefined
     this._safeRight = undefined
-    this._readSafeArea()
+    const inset = this._readSafeArea()
 
     const orientation = settingsEngine.orientationOf(win)
     const settings = settingsEngine.load(orientation, this.winWidth)
@@ -205,6 +220,10 @@ Page({
       orientation: orientation,
       settings: settings,
       viewportHeight: this.winHeight,
+      safeTop: inset.top,
+      safeBottom: inset.bottom,
+      safeLeft: inset.left,
+      safeRight: inset.right,
       alignOptions: settingsEngine.TEXT_ALIGNS,
       textColors: settingsEngine.TEXT_COLORS,
       bgColors: settingsEngine.BG_COLORS,
@@ -287,13 +306,22 @@ Page({
     if (!w || !h) return
     this.winWidth = w
     this.winHeight = h
-    // 安全区随方向变（横屏刘海在左右），转屏后必须重新读
+    // 安全区随方向变（横屏刘海在左右，竖屏在上下），转屏后必须重新读并同步给视图
     this._safeLeft = undefined
     this._safeRight = undefined
+    const inset = this._syncSafeInsets()
     const orientation = settingsEngine.orientationOf({ windowWidth: w, windowHeight: h })
     // 横竖屏各存一套设置：换向就换一套参数，互不污染
     const settings = settingsEngine.load(orientation, w)
-    this.setData({ orientation: orientation, settings: settings, viewportHeight: h })
+    this.setData({
+      orientation: orientation,
+      settings: settings,
+      viewportHeight: h,
+      safeTop: inset.top,
+      safeBottom: inset.bottom,
+      safeLeft: inset.left,
+      safeRight: inset.right
+    })
     this._parseAndLayout({ keepProgress: true })
   },
 
@@ -454,6 +482,8 @@ Page({
     // 4px 余量：给字体度量的亚像素误差留点空间（只在「刚好塞满一行」的临界值上生效，
     // 不影响常规字号的行宽）。行盒本身用 min-height，所以真折行也不会叠字。
     const charsPerLine = Math.max(6, Math.floor((usable - 4) / (fontSize + letterSpacing)))
+    // 供速度换算用：每字纵向像素 = 行高 / 每行字数（纯几何，与稿件长度无关）
+    this._charsPerLine = charsPerLine
 
     const legacy = prefsEngine.load()
     const smartOff = !!legacy.smartOff
@@ -503,7 +533,6 @@ Page({
     // 全量渲染的代价是整篇行对象在一次 setData 里过桥，微信单次 setData
     // 上限 1024KB，5000 行 ≈ 1.6MB 会直接白屏。超过 BLOB_LINES 就降级成
     // 「一整块纯文本」（内容一字不丢，DOM 只剩 1 个节点，setData 只有几 KB）。
-    const BLOB_LINES = 1200
     const blobMode = this.displayLines.length > BLOB_LINES
     if (blobMode) {
       const blobText = String(this.script.content || '').replace(/\r\n?/g, '\n')
@@ -553,20 +582,14 @@ Page({
     const endPad = Math.round(this.winHeight * 0.75)
     const totalScroll = Math.max(0, startPad + textHeight + endPad - this.winHeight)
 
-    // 初始可见窗口：虚拟列表只渲染视口附近的行，避免 lines + visibleLines
-    // 两份全量同时进一次 setData（800 行稿会逼近 1024KB 上限，初始就卡一下）。
-    const windowCount = Math.ceil(this.winHeight / lineHeightPx) + 24
-    const initialVisible = blobMode ? this.displayLines : this.displayLines.slice(0, windowCount)
-    // 首屏切片的估算高度，供 _measureContent 标定全文高度用
-    this._estSliceH = blobMode
-      ? textHeight
-      : this._sliceHeight(0, initialVisible.length)
+    // 全量渲染：台词一次给全，滚动期间不再换批（见 BLOB_LINES 注释）。
+    // 只发一份 lines —— 以前 lines + visibleLines 各发一次，setData 体积翻倍，
+    // 长稿光过桥就要几十毫秒。量高度时 .tp-lines 就是全文，
+    // _measureContent 的标定比例自然等于 1，每字像素也就准了。
+    this._estSliceH = textHeight
 
     const patch = {
       lines: this.displayLines,
-      visibleLines: initialVisible,
-      visibleStart: 0,
-      visibleTop: 0,
       fontSizePx: fontSize,
       lineHeightPx: lineHeightPx,
       roleFontSize: Math.max(10, Math.round(fontSize * 0.62)),
@@ -806,9 +829,12 @@ Page({
     // 注意：Page 里不能调 .in(this)（那是自定义组件专用），否则永远拿不到高度
     // → 文字高度只能靠估算 → 滚动距离与「字/分钟」全部失真。
     //
-    // 另一个坑：虚拟列表只渲染前 windowCount 行，量到的只是「切片高度」，
-    // 直接当全文高度会让长稿的 totalScroll 只有真实值的一小截（读一半就滑到底）。
-    // 这里用「实测切片 / 估算切片」的比例把估算总高标定成真实总高。
+    // 现在列表是全量渲染，量到的就是全文高度，标定比例基本等于 1；
+    // 仍保留「实测 / 估算」的比例换算是为了兼容降级成纯文本块（blob）的路径，
+    // 以及老基础库上第一次测不到高度的场景。
+    //
+    // 这也顺带让「每字纵向像素 = 全文高 ÷ 字数」变成实测值 —— 速度换算的最后
+    // 一层估算误差就此消掉：设定多少字/分，就真的走多少字/分。
     wx.createSelectorQuery()
       .select('.tp-lines')
       .boundingClientRect((rect) => {
@@ -853,34 +879,17 @@ Page({
     }
   },
 
-  /** 只渲染视口附近的行，长稿件也不卡 */
+  /**
+   * 渲染列表守护。
+   *
+   * 2026-10-29 起不再做「边滚边换批」的虚拟列表 —— 换批那一帧要重建几十个节点，
+   * 必掉一帧，观感就是「间歇性跳一下」。台词一次性渲染完，滚动期间只有 transform 变。
+   * 这里只剩一个职责：过滤角色导致 displayLines 变短/变长时，把新列表推给视图。
+   */
   _updateVisible(force) {
-    const lineH = this.data.lineHeightPx || 1
-    const total = this.displayLines.length
-    if (total <= 0) return
-    // blob 模式只有 1 个整块，无需裁剪
-    if (this.data.blobMode || (total === 1 && this.displayLines[0].blob)) {
-      if (this.data.visibleStart !== 0 || this.data.visibleLines !== this.displayLines) {
-        this.setData({ visibleStart: 0, visibleTop: 0, visibleLines: this.displayLines })
-      }
-      return
-    }
-    const offset = this.engine ? this.engine.current : this.data.offset
-    const startPad = this.data.startPad || 0
-    // 台词首行在内容块的 startPad 处，滚过 startPad 才进入首行
-    // 用行高地形图找起点（折行会让「第几行」和 offset/lineH 不再线性对应）
-    const rawStart = this._indexAtOffset(offset - startPad) - 10
-    const start = Math.max(0, rawStart)
-    const count = Math.ceil(this.winHeight / lineH) + 24
-    if (!force && start === this.data.visibleStart) return
-    // visibleTop 是这一片在「整篇文本坐标系」里的 y。
-    // 少了它，渲染出来的切片会被当成从第 0 行开始，越滚越偏、最后整屏空白。
-    const top = this._lineTops && this._lineTops.length ? this._lineTops[start] || 0 : start * lineH
-    this.setData({
-      visibleStart: start,
-      visibleTop: top,
-      visibleLines: this.displayLines.slice(start, start + count)
-    })
+    if (this.data.blobMode) return
+    if (this.data.lines === this.displayLines && !force) return
+    this.setData({ lines: this.displayLines })
   },
 
   /** 把引擎位置同步回视图（seek/reset 后调用） */
@@ -906,13 +915,31 @@ Page({
     }
     this._charCount = charCount
 
-    // 每字纵向像素 = 文字总高 ÷ 加权字数。
-    // 这是「字/分钟 → 像素/秒」唯一稳定的桥梁：
-    // 它只跟字号/行距/台词区宽度有关，**跟稿件长短、上下留白无关**。
-    // 旧实现拿 totalScroll（含 0.5 屏起播留白 + 0.75 屏结束留白）当分母，
-    // 短稿被留白稀释 → 算出的每字像素虚高 → 调多快都慢得像没反应。
+    // 每字纵向像素 —— 「字/分钟 → 像素/秒」唯一稳定的桥梁。
+    //
+    // 两个口径，优先用实测：
+    //   理论值 geo  = 行高 ÷ 每行最多能放几个字
+    //   实测值 real = 文字总高 ÷ 加权字数
+    //
+    // 为什么实测更准：提词稿大量是短句（对白一句一行），一行往往只放 4–6 个字，
+    // 而 geo 假设每行都塞满（7 个字）。用 geo 会把每字像素算小 → 同样 600 字/分，
+    // 实际只跑出约 470 字/分，用户看到的就是「拉到 600 还是慢」。
+    // 实测值把「短句不占满一行」这层损耗算了进去，设定的字/分钟才和观感对得上。
+    //
+    // 但 textHeight 可能被高度标定算歪（切片比例失真），所以加护栏：
+    // 超出 geo 的 [0.8, 2.5] 倍就判定为测量异常，退回几何值。
+    // 注意 textHeight 只含文字，不含 startPad/endPad，所以不会重蹈「留白摊进分母」的老路。
+    const lineH = Number(this.data.lineHeightPx) || 0
+    const cpl = Number(this._charsPerLine) || 0
+    const geo = lineH > 0 && cpl > 0 ? lineH / cpl : 0
     const textH = Number(this.data.textHeight) || 0
-    const pxPerChar = charCount > 0 && textH > 0 ? textH / charCount : 0
+    const real = charCount > 0 && textH > 0 ? textH / charCount : 0
+
+    let pxPerChar = geo
+    if (real > 0 && (geo <= 0 || (real >= geo * 0.8 && real <= geo * 2.5))) {
+      pxPerChar = real
+    }
+    if (!(pxPerChar > 0) && real > 0) pxPerChar = real
 
     return {
       charCount: charCount,
@@ -934,7 +961,9 @@ Page({
     if (s.speedUnit === 'px') {
       return pct(s.speed, timeline.LEGACY_SPEED_MIN, timeline.LEGACY_SPEED_MAX)
     }
-    return pct(s.speedCpm, timeline.CPM_MIN, timeline.CPM_MAX)
+    // 对数刻度：滑块位置与「速度的倍数」成正比（详见 timeline.cpmRatio 注释），
+    // 否则 20–1200 的线性映射会把 200 挤在 15% 处，200→300 只占 4% 行程。
+    return Math.round(timeline.cpmRatio(s.speedCpm) * 1000) / 10
   },
 
   /* ======================================================================
@@ -1002,9 +1031,20 @@ Page({
     if (!isFinite(offset)) return
     if (this.stats) this.stats.onTick(progress)
 
-    const patch = { offset: offset, autoTop: offset }
+    // 亚像素过滤：位移不到 0.35px 时这一帧不需要重绘。
+    // 慢速档（20 字/分 ≈ 4px/s）下每帧只走 0.07px，若照样 setData，
+    // 渲染层会收到大量「几乎相同」的 transform —— 白耗一次渲染预算，
+    // 反而更容易在别的帧上掉帧。攒到肉眼能分辨再发。
+    const delta = Math.abs(offset - (this._lastOffsetSent || 0))
     const pctVal = Math.round(progress * 100)
-    if (pctVal !== this._lastPct) {
+    const needPct = pctVal !== this._lastPct
+    if (delta < 0.35 && !needPct) return
+    this._lastOffsetSent = offset
+
+    // 两位小数足够（0.01px 远小于一个物理像素），同时让 setData 的字符串更短
+    const shown = Math.round(offset * 100) / 100
+    const patch = { offset: shown, autoTop: shown }
+    if (needPct) {
       this._lastPct = pctVal
       patch.progressText = pctVal + '%'
       patch.progressValue = pctVal
@@ -1013,10 +1053,10 @@ Page({
       const fi = this._focusIndexOf(offset)
       if (fi !== this.data.focusIndex) patch.focusIndex = fi
     }
-    this.setData(patch)
 
-    this._frameCount++
-    if (this._frameCount % 8 === 0) this._updateVisible(false)
+    // 只发一次 setData：以前这里还每 8 帧塞一次 visibleLines，
+    // 那一帧要重建几十个节点 → 掉帧 → 「隔一会儿顿一下」。现在列表恒定，不再重建。
+    this.setData(patch)
   },
 
   _onEnd() {
@@ -1061,6 +1101,7 @@ Page({
     const target = Math.max(0, Math.min(total, Math.round(px || 0)))
     if (this.engine) this.engine.syncTo(target)
     this._freeTop = target
+    this._lastOffsetSent = -1
     this.setData({
       autoTop: target,
       offset: target,
@@ -1339,7 +1380,15 @@ Page({
       case 'vs-speed':
         return s.speedUnit === 'px'
           ? { key: 'speed', min: timeline.LEGACY_SPEED_MIN, max: timeline.LEGACY_SPEED_MAX, step: 0.1, mode: 'quick' }
-          : { key: 'speedCpm', min: timeline.CPM_MIN, max: timeline.CPM_MAX, step: timeline.CPM_STEP, mode: 'quick' }
+          : {
+              key: 'speedCpm',
+              min: timeline.CPM_MIN,
+              max: timeline.CPM_MAX,
+              step: timeline.CPM_STEP,
+              mode: 'quick',
+              // 对数刻度：滑块行程按「倍数」分配，而不是按绝对差值
+              log: true
+            }
       case 'vs-fontSize':
         return { key: 'fontSize', min: settingsEngine.FONT_SIZE_MIN, max: settingsEngine.FONT_SIZE_MAX, step: 1, mode: 'layout' }
       case 'vs-lineHeight':
@@ -1471,12 +1520,19 @@ Page({
     const d = this._vDrag
     const y = this._touchY(e)
     if (d && d.id === id && typeof d.y0 === 'number' && typeof y === 'number') {
-      // 主路径：纯相对位移。1px = 区间 / 轨道高，与菜单滚到哪、几何准不准全都无关。
+      // 主路径：纯相对位移。与菜单滚到哪、几何准不准全都无关。
       const spec = this._sliderSpec(id)
       if (!spec) return
       const rectH = this._sliderRects[id] && this._sliderRects[id].height
       const travel = d.travel > 20 ? d.travel : rectH > 20 ? rectH : 46
-      this._applySliderValue(id, d.value0 - ((y - d.y0) / travel) * (spec.max - spec.min))
+      const dy = (y - d.y0) / travel
+      if (spec.log) {
+        // 对数刻度：手指位移换算成「比例行程」，而不是「绝对差值」。
+        // 否则在 20–1200 的区间里，轻轻一拖就从 200 冲到 700，快段根本没法微调。
+        this._applySliderValue(id, timeline.cpmFromRatio(timeline.cpmRatio(d.value0) - dy))
+      } else {
+        this._applySliderValue(id, d.value0 - dy * (spec.max - spec.min))
+      }
       return
     }
     // 兜底（touchstart 丢了）：退回绝对定位
@@ -1576,7 +1632,9 @@ Page({
     const spec = this._sliderSpec(id)
     if (!spec) return
     const r = Math.max(0, Math.min(1, Number(ratio) || 0))
-    this._applySliderValue(id, spec.min + r * (spec.max - spec.min))
+    // 对数刻度（速度）：ratio 直接映射成「倍数行程」
+    if (spec.log) this._applySliderValue(id, timeline.cpmFromRatio(r))
+    else this._applySliderValue(id, spec.min + r * (spec.max - spec.min))
   },
 
   /**
@@ -1981,7 +2039,12 @@ Page({
   _tickClock() {
     const d = new Date()
     const pad = (x) => (x < 10 ? '0' + x : '' + x)
-    this.setData({ clockText: `${pad(d.getHours())}:${pad(d.getMinutes())}` })
+    const text = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+    // 10 秒一跳，但只有跨分钟才真的变。不判等的话，每分钟会白写 5 次 setData ——
+    // 每次都是一次「逻辑层→渲染层」，正好落在滚动中就是一次掉帧。
+    if (text === this._clockText) return
+    this._clockText = text
+    this.setData({ clockText: text })
   },
 
   _applyScreenPrefs(s) {

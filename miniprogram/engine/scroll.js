@@ -21,6 +21,27 @@ const MAX_DT = 100
 const FRAME_MS = 16 // 帧间隔，约 60fps
 
 /**
+ * 单帧最多推进多少毫秒（按正常帧折算）。
+ *
+ * ⚠️ 这里曾经写成「超过 2 帧就截断，把多出来的时间丢掉」，本意是不让卡顿变成跳跃，
+ * 但代价是**速度凭空变慢**：实测间隔 40ms → 只剩 80%，50ms → 64%，65ms → 49%。
+ * 也就是说 1200 字/分在真机上只能跑出 600–900 字/分 —— 这正是宝哥反馈
+ * 「调到 1200 还是慢」的根因：不是换算错，是引擎每帧把时间扔了。
+ *
+ * 现在改成**时间记账**（见 _tick）：真实流逝的毫秒先入账，单帧最多消费 4 帧的量，
+ * 没消费完的留给后面几帧补。平均速度因此严格等于设定值，
+ * 同时任何一帧的位移都不会超过「4 帧的量」，卡顿也不会变成一次大跳。
+ */
+const STEP_BUDGET_MS = FRAME_MS * 4
+
+/**
+ * 欠账上限。真机偶尔会卡到几百毫秒（切后台、系统弹窗），
+ * 若把这些时间全部补回去，恢复瞬间会明显「加速冲刺」。
+ * 200ms 是折中：正常抖动（≤100ms）能完整补回，极端卡顿只补一小段。
+ */
+const MAX_DEBT_MS = 200
+
+/**
  * 两次「回到开头」之间的最小间隔。
  * 稿件很短（可滚动距离只有几十 px）时，一帧就能滚完，
  * 若不加下限，onLoop 会每 16ms 触发一次 → 每帧 setData → 页面卡死、耗电飙升。
@@ -54,6 +75,9 @@ class ScrollEngine {
     this.loop = false // 是否循环播放（滚到底回到顶部继续）
     this._timer = null
     this._lastTs = 0
+    // 时间欠账（ms）：上一帧因单帧上限没消费完的时间，留给后续帧补。
+    // 详见 _tick 与 STEP_BUDGET_MS 的注释 —— 这是「调速却没有真正变快」的根因修复。
+    this._debt = 0
     this.pauseTimer = null
     // 循环节流与「内容不足一屏」保护，见 _tick
     this._lastLoopTs = 0
@@ -94,6 +118,7 @@ class ScrollEngine {
     this.endOffset = Math.max(0, this.totalHeight - this.guideOffset)
     // 尺寸变了（换字号/转屏）后可能重新可滚动，清掉「不足一屏」的结束标记
     this._shortEnded = false
+    this._debt = 0
     this._clampTarget()
   }
 
@@ -186,6 +211,7 @@ class ScrollEngine {
   reset(offset) {
     this.current = offset || 0
     this.target = this.current
+    this._debt = 0
     this._shortEnded = false
     this._emit()
   }
@@ -196,6 +222,7 @@ class ScrollEngine {
     const v = Math.max(0, Math.min(1, p || 0)) * max
     this.current = v
     this.target = v
+    this._debt = 0
     this._shortEnded = false
     this._follow = false
     this._emit()
@@ -215,6 +242,7 @@ class ScrollEngine {
     const v = this._clamp(offsetPx)
     this.current = v
     this.target = v
+    this._debt = 0
     this._shortEnded = false
     this._follow = false
     if (!this._timer) this._emit()
@@ -244,10 +272,22 @@ class ScrollEngine {
     let dt = now - this._lastTs
     this._lastTs = now
     if (!(dt > 0)) dt = FRAME_MS // 首帧或异常时间戳，给一个合理的默认间隔
+    // 后台切回来别一帧跳过整篇（100ms 以上按 100ms 记，剩下的不补）
     if (dt > MAX_DT) dt = MAX_DT
 
     if (this.playing) {
-      this.target += (this.pxPerSecond * dt) / 1000
+      // ── 时间记账 ──────────────────────────────────────────────────
+      // 旧实现：`if (dt > 32) dt = 32`，多出来的时间直接丢掉 → 定时器一慢，
+      // 速度就成比例变慢（40ms → 80%，50ms → 64%，65ms → 49%）。
+      // 提词器是匀速阅读工具，速度必须等于设定值，所以改成「先入账、再分期消费」：
+      //   入账 = 本帧真实流逝的 ms（上限 MAX_DT）
+      //   消费 = min(欠账, 4 帧的量)，剩下的留到下一帧
+      // 这样平均速度严格守恒，单帧位移又不会超过 4 帧，卡顿不会被放大成跳跃。
+      this._debt = Math.min(MAX_DEBT_MS, this._debt + dt)
+      const use = Math.min(this._debt, STEP_BUDGET_MS)
+      this._debt -= use
+
+      this.target += (this.pxPerSecond * use) / 1000
       const max = this.maxOffset
 
       if (max <= 0) {
@@ -292,6 +332,10 @@ class ScrollEngine {
           this.onEnd()
         }
       }
+    } else {
+      // 暂停/收场：欠账清零。否则暂停几秒再点播放，会把暂停期间的时间一次性补上，
+      // 一按播放就「窜出去一截」。
+      this._debt = 0
     }
 
     const diff = this.target - this.current

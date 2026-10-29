@@ -186,7 +186,7 @@ console.log('══════ 6. 播放中调速：滚动真的变快（用户
   const slow = p.engine.current - t0
 
   p.onToggleSpeedUnit()          // 切到像素口径
-  p._setSetting({ speed: 50 }, 'quick') // 拉到最快
+  p._setSetting({ speed: 100 }, 'quick') // 拉到最快
   step(50)
   const t1 = p.engine.current
   step(1000)
@@ -301,7 +301,8 @@ console.log('══════ 10. 菜单动画中的错误几何不能被采�
   step(30)
   p.onVSliderEnd()
   const after = p.data.settings.speedCpm
-  ok('屏幕外 rect 被拒绝，改用相对位移（不跳极值）', after > before && after < 600, `${before}→${after}`)
+  // 上拖 50px ≈ 一整个轨道高度，按对数刻度应放大约 75 倍 → 会顶到上限，但不该掉到最慢
+  ok('屏幕外 rect 被拒绝，改用相对位移（不跳极值）', after > before && after <= 1500, `${before}→${after}`)
   RECT_MODE = 'ok'
 }
 
@@ -337,7 +338,7 @@ console.log('══════ 12. 速度是「值」而不是「比例」的�
   p._applySliderValue('vs-speed', 560)
   ok('提速后引擎 px/s 立即变大', p.engine.pxPerSecond > px1, `${px1.toFixed(2)}→${p.engine.pxPerSecond.toFixed(2)}`)
   p._applySliderValue('vs-speed', 9999)
-  ok('超上限被钳到 600', p.data.settings.speedCpm === 600, 'cpm=' + p.data.settings.speedCpm)
+  ok('超上限被钳到 1500', p.data.settings.speedCpm === 1500, 'cpm=' + p.data.settings.speedCpm)
   p._applySliderValue('vs-speed', -5)
   ok('超下限被钳到 20', p.data.settings.speedCpm === 20, 'cpm=' + p.data.settings.speedCpm)
 }

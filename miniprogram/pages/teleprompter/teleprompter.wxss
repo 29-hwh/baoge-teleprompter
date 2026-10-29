@@ -63,8 +63,8 @@
 .tp-line {
   width: 100%;
   box-sizing: border-box;
-  padding-left: calc(16px + env(safe-area-inset-left, 0px));
-  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  padding-left: calc(16px + var(--safe-l, env(safe-area-inset-left, 0px)));
+  padding-right: calc(16px + var(--safe-r, env(safe-area-inset-right, 0px)));
   /* 折叠时盒子自动长高，行与行不可能重叠 */
   overflow: visible;
 }
@@ -147,7 +147,7 @@
   position: fixed;
   left: 0;
   right: 0;
-  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  top: calc(var(--safe-t, env(safe-area-inset-top, 0px)) + 10px);
   text-align: center;
   font-size: 12px;
   letter-spacing: 1px;
@@ -159,7 +159,10 @@
 /* ── 右侧竖条进度 ── */
 .tp-progress {
   position: fixed;
-  right: 0;
+  /* 横屏时右侧可能就是刘海/圆角所在边，整条内缩，别让 3px 细线被遮掉。
+     纵向保持 0→0：拖动进度按 y / 屏高 换算（见 onProgressTouchMove），
+     一旦改成安全区内，顶部会凭空多出一段拖不到的死区。 */
+  right: var(--safe-r, env(safe-area-inset-right, 0px));
   top: 0;
   bottom: 0;
   width: 14px;
@@ -187,7 +190,7 @@
 .tp-fab {
   position: fixed;
   right: 16px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  bottom: calc(var(--safe-b, env(safe-area-inset-bottom, 0px)) + 16px);
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -275,6 +278,10 @@
   overflow: hidden;
   transform: translateY(102%);
   transition: transform 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* 底部抽屉贴屏幕底：把 Home 指示条 / 手势条那一条让出来，
+     否则最后一排控件（屏幕常亮等）会被系统手势条压住、点不到 */
+  padding-bottom: var(--safe-b, env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
   z-index: 310;
 }
 
@@ -292,6 +299,9 @@
   height: 100%;
   max-height: none;
   border-radius: 0;
+  /* 横屏时刘海在左或右：抽屉贴右，把右侧安全区让出来 */
+  padding-bottom: 0;
+  padding-right: var(--safe-r, env(safe-area-inset-right, 0px));
   transform: translateX(102%);
   box-shadow: -5px 2px 10px rgba(200, 200, 200, 0.5);
 }
@@ -316,9 +326,9 @@
  * 老版本「切竖屏 / 退出 / ×」三个按钮全被胶囊盖住，点不到也看不见。
  * 处理：整个头部右让 112px（胶囊宽约 87 + 边距），工具组靠左排。 */
 .tp-sheet-head--land {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: var(--safe-t, env(safe-area-inset-top, 0px));
   padding-right: 112px;
-  height: calc(40px + env(safe-area-inset-top, 0px));
+  height: calc(40px + var(--safe-t, env(safe-area-inset-top, 0px)));
   justify-content: flex-start;
 }
 
@@ -447,6 +457,21 @@
   font-size: 7px;
   opacity: 0.55;
   margin-left: 1px;
+}
+
+/* 引擎实际速度读数（只出现在速度格）：标签上方那一行小字。
+   用途是自证 —— 数字调了、px/s 没变 → 断在换算；px/s 变了但画面不变 → 断在引擎。
+   纯展示，不接收触摸，避免把滑块的拖动吃掉。 */
+.tp-cell-px {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 22px;
+  font-size: 7px;
+  line-height: 1;
+  letter-spacing: -0.2px;
+  color: rgba(0, 0, 0, 0.3);
+  pointer-events: none;
 }
 
 /* 可点的数值：继承了 .tp-cell-val 的 pointer-events:none，这里要放开。
@@ -657,7 +682,7 @@
 .tp-sheet-foot {
   display: flex;
   justify-content: center;
-  padding: 4px 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  padding: 4px 16px calc(var(--safe-b, env(safe-area-inset-bottom, 0px)) + 18px);
 }
 
 .tp-foot-btn {

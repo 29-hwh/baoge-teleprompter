@@ -29,8 +29,8 @@ function near(a, b, eps) {
 }
 
 console.log('=== [1] 常量与浅纸一致 ===')
-check('CPM 20/600/10/200', T.CPM_MIN === 20 && T.CPM_MAX === 600 && T.CPM_STEP === 10 && T.CPM_DEFAULT === 200)
-check('旧标尺 0/50/8/4', T.LEGACY_SPEED_MIN === 0 && T.LEGACY_SPEED_MAX === 50 && T.LEGACY_SPEED_DEFAULT === 8 && T.LEGACY_PX_PER_SEC === 4)
+check('CPM 20/1500/10/200', T.CPM_MIN === 20 && T.CPM_MAX === 1500 && T.CPM_STEP === 10 && T.CPM_DEFAULT === 200)
+check('旧标尺 0/125/8/4（与 cpm 上限 1500 对齐）', T.LEGACY_SPEED_MIN === 0 && T.LEGACY_SPEED_MAX === 125 && T.LEGACY_SPEED_DEFAULT === 8 && T.LEGACY_PX_PER_SEC === 4)
 check('行高系数 1.2', T.LINE_HEIGHT_FACTOR === 1.2)
 check('左右内边距 16', T.TEXT_PADDING_X === 16)
 
@@ -146,8 +146,8 @@ console.log('\n=== [7] 老存档迁移 ===')
 console.log('\n=== [8] 边界钳制 ===')
 check('cpm 吸附到 10 的整数倍', T.clampCpm(203) === 200, T.clampCpm(203))
 check('cpm 下限 20', T.clampCpm(1) === 20)
-check('cpm 上限 600', T.clampCpm(9999) === 600)
-check('旧速度上限 50', T.clampLegacySpeed(80) === 50)
+check('cpm 上限 1500', T.clampCpm(9999) === 1500)
+check('旧速度上限 125', T.clampLegacySpeed(999) === 125)
 check('旧速度保留一位小数', T.clampLegacySpeed(8.34) === 8.3)
 
 console.log('\n==================== 汇总 ====================')
